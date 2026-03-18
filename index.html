@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CardForge Studio</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>CardForge Studio</h1>
+        <p>Créateur de cartes recto / verso, prêt pour impression PDF.</p>
+      </div>
+
+      <section class="panel">
+        <h2>1. Modèles</h2>
+        <div class="template-grid">
+          <button class="template-btn active" data-template="blank">
+            <span>Vierge</span>
+            <small>Carte totalement vide</small>
+          </button>
+          <button class="template-btn" data-template="pirate">
+            <span>Pirate</span>
+            <small>Titre, image, parchemin et décor</small>
+          </button>
+        </div>
+        <button id="newDeckBtn" class="primary full">Créer un nouveau lot avec ce modèle</button>
+      </section>
+
+      <section class="panel">
+        <h2>2. Lot de cartes</h2>
+        <div class="row compact">
+          <label for="batchCount">Nombre</label>
+          <input id="batchCount" type="number" min="1" max="100" value="1" />
+          <button id="duplicateBtn">Dupliquer</button>
+        </div>
+        <div class="row compact">
+          <label for="cardPicker">Carte</label>
+          <select id="cardPicker"></select>
+          <button id="deleteCardBtn" class="danger">Suppr.</button>
+        </div>
+        <div class="row compact">
+          <button id="prevCardBtn">←</button>
+          <button id="nextCardBtn">→</button>
+          <button id="cloneCardBtn">Cloner cette carte</button>
+        </div>
+        <p class="hint">Jusqu'à 100 cartes dans le même lot.</p>
+      </section>
+
+      <section class="panel">
+        <h2>3. Face active</h2>
+        <div class="segmented">
+          <button class="face-btn active" data-face="front">Recto</button>
+          <button class="face-btn" data-face="back">Verso</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>4. Ajouter des éléments</h2>
+        <div class="tool-grid">
+          <button id="addTitleBtn">Titre</button>
+          <button id="addTextBtn">Texte</button>
+          <button id="addImageBtn">Image</button>
+          <button id="addBadgeBtn">Icône / badge</button>
+          <button id="addShapeBtn">Cadre</button>
+          <button id="toggleGridBtn">Grille</button>
+        </div>
+        <input id="imageUpload" type="file" accept="image/*" multiple hidden />
+      </section>
+
+      <section class="panel">
+        <h2>5. Style</h2>
+        <label>Texte</label>
+        <textarea id="textContent" rows="4" placeholder="Modifier le texte de l'élément sélectionné"></textarea>
+        <div class="style-grid">
+          <label>Police
+            <select id="fontFamily">
+              <option>Georgia</option>
+              <option>Times New Roman</option>
+              <option>Arial</option>
+              <option>Verdana</option>
+              <option>Trebuchet MS</option>
+              <option>Courier New</option>
+              <option>Impact</option>
+              <option>Palatino Linotype</option>
+              <option>Garamond</option>
+              <option>Comic Sans MS</option>
+            </select>
+          </label>
+          <label>Taille
+            <input id="fontSize" type="range" min="8" max="56" value="18" />
+          </label>
+          <label>Couleur
+            <input id="textColor" type="color" value="#2b1d0f" />
+          </label>
+          <label>Fond
+            <input id="fillColor" type="color" value="#f7ebc6" />
+          </label>
+          <label>Opacité
+            <input id="opacity" type="range" min="10" max="100" value="100" />
+          </label>
+          <label>Rotation
+            <input id="rotation" type="range" min="-180" max="180" value="0" />
+          </label>
+        </div>
+        <div class="row compact">
+          <button id="alignLeftBtn">Align. gauche</button>
+          <button id="alignCenterBtn">Centrer</button>
+          <button id="alignRightBtn">Align. droite</button>
+        </div>
+        <div class="row compact">
+          <button id="bringFrontBtn">Au premier plan</button>
+          <button id="sendBackBtn">À l'arrière</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>6. Carte</h2>
+        <div class="style-grid">
+          <label>Nom de la carte
+            <input id="cardNameInput" type="text" placeholder="Carte 1" />
+          </label>
+          <label>Fond recto
+            <input id="frontBgColor" type="color" value="#f7f1dd" />
+          </label>
+          <label>Fond verso
+            <input id="backBgColor" type="color" value="#f7f1dd" />
+          </label>
+        </div>
+        <div class="row compact">
+          <button id="clearFaceBtn">Vider cette face</button>
+          <button id="resetTemplateBtn">Réappliquer le modèle</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>7. Sauvegarde & export</h2>
+        <div class="tool-grid">
+          <button id="saveBtn" class="primary">Sauvegarder</button>
+          <button id="exportJsonBtn">Exporter JSON</button>
+          <button id="importJsonBtn">Importer JSON</button>
+          <button id="exportPdfBtn" class="primary">Exporter PDF</button>
+        </div>
+        <input id="jsonUpload" type="file" accept="application/json" hidden />
+        <p class="hint">Le PDF utilise l'impression du navigateur. Choisissez « Enregistrer en PDF ».</p>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <header class="workspace-header">
+        <div>
+          <h2 id="workspaceTitle">Carte 1 — Recto</h2>
+          <p id="workspaceMeta">Modèle : vierge</p>
+        </div>
+        <div class="legend">
+          <span>Astuce : glissez, redimensionnez et double-cliquez pour éditer.</span>
+        </div>
+      </header>
+
+      <section class="canvas-wrap">
+        <div id="cardCanvas" class="card-canvas"></div>
+      </section>
+    </main>
+  </div>
+
+  <template id="elementTemplate">
+    <div class="card-element" tabindex="0">
+      <div class="resize-handle"></div>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
