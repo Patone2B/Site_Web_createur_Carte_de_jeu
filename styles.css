@@ -1,0 +1,187 @@
+:root {
+  --sidebar-width: 360px;
+  --bg: #10151f;
+  --panel: #182131;
+  --panel-soft: #202c41;
+  --line: #2c3950;
+  --text: #edf2ff;
+  --muted: #a8b5cf;
+  --accent: #5aa8ff;
+  --accent-strong: #2f87ee;
+  --danger: #d14f64;
+  --card-ratio: 0.7159;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--panel-soft); color: var(--text); border-radius: 12px; padding: 10px 12px; }
+button:hover { filter: brightness(1.08); }
+button.primary { background: linear-gradient(180deg, var(--accent), var(--accent-strong)); border: none; }
+button.danger { background: rgba(209,79,100,0.18); }
+button.full { width: 100%; }
+input, select, textarea {
+  width: 100%;
+  background: #0e1521;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+textarea { resize: vertical; }
+label { display: grid; gap: 6px; color: var(--muted); font-size: 0.92rem; }
+small, .hint { color: var(--muted); }
+
+#app {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  padding: 18px;
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, #162133 0%, #121a29 100%);
+  overflow: auto;
+}
+.brand h1 { margin: 0 0 6px; font-size: 1.6rem; }
+.brand p { margin: 0 0 18px; color: var(--muted); }
+.panel {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.panel h2 { margin: 0 0 12px; font-size: 1rem; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row.compact > * { flex: 1; }
+.segmented, .template-grid, .tool-grid, .style-grid { display: grid; gap: 8px; }
+.segmented { grid-template-columns: repeat(2, 1fr); }
+.tool-grid { grid-template-columns: repeat(2, 1fr); }
+.style-grid { grid-template-columns: repeat(2, 1fr); }
+.template-grid { grid-template-columns: 1fr; }
+.template-btn {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  padding: 14px; border-radius: 14px;
+}
+.template-btn.active, .face-btn.active { outline: 2px solid var(--accent); background: rgba(90,168,255,0.15); }
+
+.workspace { padding: 22px; display: grid; grid-template-rows: auto 1fr; gap: 18px; }
+.workspace-header {
+  display: flex; justify-content: space-between; align-items: center;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px;
+}
+.workspace-header h2 { margin: 0 0 6px; }
+.workspace-header p { margin: 0; color: var(--muted); }
+.legend { color: var(--muted); font-size: 0.92rem; }
+.canvas-wrap {
+  background:
+    radial-gradient(circle at top, rgba(90,168,255,0.11), transparent 32%),
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+}
+.card-canvas {
+  position: relative;
+  width: min(62vw, 460px);
+  aspect-ratio: var(--card-ratio);
+  background: #f7f1dd;
+  border-radius: 24px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+  overflow: hidden;
+  border: 12px solid rgba(255,255,255,0.7);
+}
+.card-canvas.show-grid::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(0,0,0,0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0,0,0,0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+}
+.card-element {
+  position: absolute;
+  min-width: 40px;
+  min-height: 30px;
+  padding: 6px 8px;
+  user-select: none;
+  transform-origin: center center;
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+.card-element.selected { outline: 2px dashed var(--accent-strong); outline-offset: 2px; }
+.card-element.text, .card-element.title, .card-element.badge { cursor: move; }
+.card-element.shape { border: 2px solid rgba(71, 43, 17, 0.55); background: rgba(255,255,255,0.15); }
+.card-element.image { padding: 0; }
+.card-element img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.resize-handle {
+  position: absolute; width: 14px; height: 14px; bottom: 0; right: 0;
+  background: var(--accent); border-radius: 4px 0 0 0; cursor: nwse-resize;
+}
+.card-element.locked .resize-handle { display: none; }
+
+.pirate-frame {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(255,255,255,0.25), transparent 20%),
+    linear-gradient(180deg, rgba(96,58,22,0.22), rgba(58,35,12,0.08));
+}
+.pirate-frame::before {
+  content: "";
+  position: absolute; inset: 10px;
+  border: 4px solid rgba(94, 55, 18, 0.7);
+  border-radius: 18px;
+}
+.pirate-corner, .pirate-anchor {
+  position: absolute; width: 42px; height: 42px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #f2d59a, #9b6d2e 70%, #5d3916);
+  box-shadow: inset 0 0 0 3px rgba(255,255,255,0.45);
+}
+.pirate-corner.tl { top: 10px; left: 10px; }
+.pirate-corner.tr { top: 10px; right: 10px; }
+.pirate-corner.bl { bottom: 10px; left: 10px; }
+.pirate-corner.br { bottom: 10px; right: 10px; }
+
+@media (max-width: 1080px) {
+  #app { grid-template-columns: 1fr; }
+  .sidebar { border-right: none; border-bottom: 1px solid var(--line); }
+  .card-canvas { width: min(92vw, 460px); }
+}
+
+@media print {
+  body { background: white; }
+  #app { display: block; }
+  .sidebar, .workspace-header { display: none !important; }
+  .workspace, .canvas-wrap { padding: 0; border: none; background: white; }
+  .card-canvas { display: none !important; }
+  #printDeck {
+    display: grid !important;
+    gap: 6mm;
+    grid-template-columns: repeat(3, 63mm);
+    align-content: start;
+    padding: 6mm;
+  }
+  .print-card {
+    position: relative;
+    width: 63mm;
+    height: 88mm;
+    border-radius: 4mm;
+    overflow: hidden;
+    page-break-inside: avoid;
+    border: 0.2mm solid rgba(0,0,0,0.25);
+  }
+  .print-page-break { break-after: page; height: 0; }
+  .print-element {
+    position: absolute;
+    transform-origin: center center;
+    white-space: pre-wrap;
+    overflow: hidden;
+  }
+  .print-element img { width: 100%; height: 100%; object-fit: cover; }
+}
