@@ -71,7 +71,38 @@
       </section>
 
       <section class="panel">
-        <h2>5. Style</h2>
+        <h2>5. Formes à glisser</h2>
+        <p class="hint">Glissez une forme directement sur la carte, puis redimensionnez-la avec les poignées.</p>
+        <div class="shape-library" id="shapeLibrary">
+          <div class="shape-chip" draggable="true" data-shape="rect">
+            <span class="shape-preview preview-rect"></span>
+            <strong>Rectangle</strong>
+          </div>
+          <div class="shape-chip" draggable="true" data-shape="square">
+            <span class="shape-preview preview-square"></span>
+            <strong>Carré</strong>
+          </div>
+          <div class="shape-chip" draggable="true" data-shape="circle">
+            <span class="shape-preview preview-circle"></span>
+            <strong>Cercle</strong>
+          </div>
+          <div class="shape-chip" draggable="true" data-shape="ellipse">
+            <span class="shape-preview preview-ellipse"></span>
+            <strong>Ellipse</strong>
+          </div>
+          <div class="shape-chip" draggable="true" data-shape="line">
+            <span class="shape-preview preview-line"></span>
+            <strong>Ligne</strong>
+          </div>
+          <div class="shape-chip" draggable="true" data-shape="banner">
+            <span class="shape-preview preview-banner"></span>
+            <strong>Bannière</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>6. Style</h2>
         <label>Texte</label>
         <textarea id="textContent" rows="4" placeholder="Modifier le texte de l'élément sélectionné"></textarea>
         <div class="style-grid">
@@ -117,7 +148,7 @@
       </section>
 
       <section class="panel">
-        <h2>6. Carte</h2>
+        <h2>7. Carte</h2>
         <div class="style-grid">
           <label>Nom de la carte
             <input id="cardNameInput" type="text" placeholder="Carte 1" />
@@ -136,7 +167,7 @@
       </section>
 
       <section class="panel">
-        <h2>7. Sauvegarde & export</h2>
+        <h2>8. Sauvegarde & export</h2>
         <div class="tool-grid">
           <button id="saveBtn" class="primary">Sauvegarder</button>
           <button id="exportJsonBtn">Exporter JSON</button>
@@ -167,7 +198,14 @@
 
   <template id="elementTemplate">
     <div class="card-element" tabindex="0">
-      <div class="resize-handle"></div>
+      <div class="resize-handle nw" data-dir="nw"></div>
+      <div class="resize-handle n" data-dir="n"></div>
+      <div class="resize-handle ne" data-dir="ne"></div>
+      <div class="resize-handle e" data-dir="e"></div>
+      <div class="resize-handle se" data-dir="se"></div>
+      <div class="resize-handle s" data-dir="s"></div>
+      <div class="resize-handle sw" data-dir="sw"></div>
+      <div class="resize-handle w" data-dir="w"></div>
     </div>
   </template>
 
