@@ -1,508 +1,687 @@
-
-const CARD_W_MM = 63;
-const CARD_H_MM = 88;
+const STORAGE_KEY = 'cardforge-studio-state-v2';
+const GRID_SIZE = 12;
 const MAX_CARDS = 100;
-const PX_PER_MM = 3.7795275591;
 
 const state = {
-  projectName: 'Mon projet de cartes',
-  currentCardId: null,
-  currentSide: 'front',
-  selectedElementId: null,
-  pendingImage: null,
-  cards: []
+  template: 'blank',
+  activeFace: 'front',
+  activeCardIndex: 0,
+  selectedId: null,
+  showGrid: false,
+  deck: []
 };
 
-const els = {
-  cardStage: document.getElementById('cardStage'),
-  cardList: document.getElementById('cardList'),
-  viewSide: document.getElementById('viewSide'),
-  projectName: document.getElementById('projectName'),
+const el = {
+  canvas: document.getElementById('cardCanvas'),
+  templateBtns: document.querySelectorAll('.template-btn'),
+  faceBtns: document.querySelectorAll('.face-btn'),
+  newDeckBtn: document.getElementById('newDeckBtn'),
+  batchCount: document.getElementById('batchCount'),
+  duplicateBtn: document.getElementById('duplicateBtn'),
+  cardPicker: document.getElementById('cardPicker'),
+  deleteCardBtn: document.getElementById('deleteCardBtn'),
+  prevCardBtn: document.getElementById('prevCardBtn'),
+  nextCardBtn: document.getElementById('nextCardBtn'),
+  cloneCardBtn: document.getElementById('cloneCardBtn'),
+  addTitleBtn: document.getElementById('addTitleBtn'),
+  addTextBtn: document.getElementById('addTextBtn'),
+  addImageBtn: document.getElementById('addImageBtn'),
+  addBadgeBtn: document.getElementById('addBadgeBtn'),
+  addShapeBtn: document.getElementById('addShapeBtn'),
+  toggleGridBtn: document.getElementById('toggleGridBtn'),
+  textContent: document.getElementById('textContent'),
+  fontFamily: document.getElementById('fontFamily'),
+  fontSize: document.getElementById('fontSize'),
+  textColor: document.getElementById('textColor'),
+  fillColor: document.getElementById('fillColor'),
+  opacity: document.getElementById('opacity'),
+  rotation: document.getElementById('rotation'),
+  alignLeftBtn: document.getElementById('alignLeftBtn'),
+  alignCenterBtn: document.getElementById('alignCenterBtn'),
+  alignRightBtn: document.getElementById('alignRightBtn'),
+  bringFrontBtn: document.getElementById('bringFrontBtn'),
+  sendBackBtn: document.getElementById('sendBackBtn'),
+  cardNameInput: document.getElementById('cardNameInput'),
+  frontBgColor: document.getElementById('frontBgColor'),
+  backBgColor: document.getElementById('backBgColor'),
+  clearFaceBtn: document.getElementById('clearFaceBtn'),
+  resetTemplateBtn: document.getElementById('resetTemplateBtn'),
+  saveBtn: document.getElementById('saveBtn'),
+  exportJsonBtn: document.getElementById('exportJsonBtn'),
+  importJsonBtn: document.getElementById('importJsonBtn'),
+  exportPdfBtn: document.getElementById('exportPdfBtn'),
+  workspaceTitle: document.getElementById('workspaceTitle'),
+  workspaceMeta: document.getElementById('workspaceMeta'),
   imageUpload: document.getElementById('imageUpload'),
-  printSheet: document.getElementById('printSheet'),
-  emptySelection: document.getElementById('emptySelection'),
-  properties: document.getElementById('properties'),
-  propText: document.getElementById('propText'),
-  propFont: document.getElementById('propFont'),
-  propFontSize: document.getElementById('propFontSize'),
-  propColor: document.getElementById('propColor'),
-  propFill: document.getElementById('propFill'),
-  propStroke: document.getElementById('propStroke'),
-  propStrokeWidth: document.getElementById('propStrokeWidth'),
-  cardListItemTemplate: document.getElementById('cardListItemTemplate')
+  jsonUpload: document.getElementById('jsonUpload'),
+  shapeLibrary: document.getElementById('shapeLibrary')
 };
 
-function uid(prefix = 'id') {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+function uid(prefix = 'el') {
+  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function mm(v) { return `${v}mm`; }
-function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function deepClone(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
 
-function defaultCard(template = 'blank', index = 1) {
-  const base = {
+function blankCard(index = 1) {
+  return {
     id: uid('card'),
     name: `Carte ${index}`,
-    template,
-    sides: { front: [], back: [] }
+    template: state.template,
+    frontBg: '#f7f1dd',
+    backBg: '#f7f1dd',
+    faces: { front: [], back: [] }
   };
-  if (template === 'pirate') {
-    base.sides.front.push(
-      textElement('Capitaine des mers', 8, 5.2, 47, 7, {
-        fontFamily: 'Cinzel, serif', fontSize: 16, color: '#f7e8c3', z: 10
-      }),
-      imageElement('', 8, 16, 47, 30, { z: 4 }),
-      textElement('Écrivez ici le texte de votre carte pirate...', 8, 61.5, 47, 18, {
-        fontFamily: "'EB Garamond', serif", fontSize: 12, color: '#4a2f10', z: 7
-      })
-    );
-    base.sides.back.push(
-      textElement('Verso', 12, 38, 39, 8, {
-        fontFamily: 'Cinzel, serif', fontSize: 20, color: '#f7e8c3', z: 10
-      })
-    );
-  }
-  return base;
 }
 
-function baseStyle(extra = {}) {
-  return {
-    x: 8, y: 8, w: 18, h: 10,
+function getShapePreset(kind = 'rect') {
+  const presets = {
+    rect: { w: 180, h: 100, style: { background: '#f5e2ad', border: '2px solid rgba(71,43,17,0.55)', borderRadius: 18 } },
+    square: { w: 110, h: 110, style: { background: '#f5e2ad', border: '2px solid rgba(71,43,17,0.55)', borderRadius: 10 } },
+    circle: { w: 120, h: 120, style: { background: '#efd58e', border: '2px solid rgba(71,43,17,0.55)', borderRadius: 999 } },
+    ellipse: { w: 160, h: 100, style: { background: '#efd58e', border: '2px solid rgba(71,43,17,0.55)', borderRadius: 999 } },
+    line: { w: 170, h: 10, style: { background: 'transparent', border: '0 solid transparent', borderRadius: 0 } },
+    banner: { w: 180, h: 64, style: { background: '#d8b15d', border: '2px solid rgba(71,43,17,0.55)', borderRadius: 0 } }
+  };
+  return presets[kind] || presets.rect;
+}
+
+function createElement(type, overrides = {}) {
+  const base = {
+    id: uid(type),
+    type,
+    x: 20,
+    y: 20,
+    w: 120,
+    h: type === 'text' ? 80 : 40,
     rotation: 0,
-    fontFamily: 'Inter, sans-serif',
-    fontSize: 12,
-    color: '#111111',
-    fill: '#ffffff',
-    stroke: '#000000',
-    strokeWidth: 0,
     opacity: 1,
     z: 1,
-    ...extra
-  };
-}
-
-function textElement(text, x, y, w, h, style = {}) {
-  return { id: uid('el'), type: 'text', text, style: baseStyle({ x, y, w, h, fill: 'transparent', ...style }) };
-}
-function imageElement(src, x, y, w, h, style = {}) {
-  return { id: uid('el'), type: 'image', src, style: baseStyle({ x, y, w, h, fill: 'transparent', ...style }) };
-}
-function shapeElement(type, x, y, w, h, style = {}) {
-  return { id: uid('el'), type, style: baseStyle({ x, y, w, h, fill: '#d9d9d9', stroke: '#444444', strokeWidth: 0.4, ...style }) };
-}
-
-function getCurrentCard() {
-  return state.cards.find(c => c.id === state.currentCardId) || null;
-}
-
-function getCurrentSideElements() {
-  const card = getCurrentCard();
-  return card ? card.sides[state.currentSide] : [];
-}
-
-function getSelectedElement() {
-  return getCurrentSideElements().find(el => el.id === state.selectedElementId) || null;
-}
-
-function init() {
-  bindUI();
-  state.cards.push(defaultCard('blank', 1));
-  state.currentCardId = state.cards[0].id;
-  renderAll();
-}
-
-function bindUI() {
-  document.getElementById('templateBlank').addEventListener('click', () => addCard('blank'));
-  document.getElementById('templatePirate').addEventListener('click', () => addCard('pirate'));
-  document.getElementById('addCard').addEventListener('click', () => addCard(getCurrentCard()?.template || 'blank'));
-  document.getElementById('duplicateCard').addEventListener('click', duplicateCard);
-  document.getElementById('deleteCard').addEventListener('click', deleteCard);
-  document.getElementById('exportPdf').addEventListener('click', exportPdf);
-  els.viewSide.addEventListener('change', e => {
-    state.currentSide = e.target.value;
-    state.selectedElementId = null;
-    renderAll();
-  });
-  els.projectName.addEventListener('input', e => state.projectName = e.target.value);
-  els.imageUpload.addEventListener('change', onImageUpload);
-
-  document.querySelectorAll('[data-add]').forEach(btn => {
-    btn.addEventListener('click', () => addElement(btn.dataset.add));
-  });
-
-  els.propText.addEventListener('input', () => updateSelected(el => {
-    if ('text' in el) el.text = els.propText.value;
-  }));
-  els.propFont.addEventListener('change', () => updateSelected(el => el.style.fontFamily = els.propFont.value));
-  els.propFontSize.addEventListener('input', () => updateSelected(el => el.style.fontSize = Number(els.propFontSize.value || 12)));
-  els.propColor.addEventListener('input', () => updateSelected(el => el.style.color = els.propColor.value));
-  els.propFill.addEventListener('input', () => updateSelected(el => el.style.fill = els.propFill.value));
-  els.propStroke.addEventListener('input', () => updateSelected(el => el.style.stroke = els.propStroke.value));
-  els.propStrokeWidth.addEventListener('input', () => updateSelected(el => el.style.strokeWidth = Number(els.propStrokeWidth.value || 0)));
-
-  document.getElementById('deleteElement').addEventListener('click', deleteSelectedElement);
-  document.getElementById('copyElement').addEventListener('click', duplicateSelectedElement);
-  document.getElementById('bringFront').addEventListener('click', () => shiftZ(1));
-  document.getElementById('sendBack').addEventListener('click', () => shiftZ(-1));
-}
-
-function addCard(template) {
-  if (state.cards.length >= MAX_CARDS) return;
-  const card = defaultCard(template, state.cards.length + 1);
-  state.cards.push(card);
-  state.currentCardId = card.id;
-  state.selectedElementId = null;
-  renderAll();
-}
-
-function duplicateCard() {
-  const card = getCurrentCard();
-  if (!card || state.cards.length >= MAX_CARDS) return;
-  const copy = JSON.parse(JSON.stringify(card));
-  copy.id = uid('card');
-  copy.name = `${card.name} copie`;
-  ['front','back'].forEach(side => copy.sides[side].forEach(el => el.id = uid('el')));
-  state.cards.push(copy);
-  state.currentCardId = copy.id;
-  state.selectedElementId = null;
-  renderAll();
-}
-
-function deleteCard() {
-  if (state.cards.length <= 1) return;
-  const idx = state.cards.findIndex(c => c.id === state.currentCardId);
-  if (idx === -1) return;
-  state.cards.splice(idx, 1);
-  state.currentCardId = state.cards[Math.max(0, idx - 1)].id;
-  state.selectedElementId = null;
-  renderAll();
-}
-
-function addElement(type) {
-  const items = getCurrentSideElements();
-  if (!items) return;
-  let el;
-  switch (type) {
-    case 'title': el = textElement('Nouveau titre', 8, 8, 35, 8, { fontFamily: 'Cinzel, serif', fontSize: 18, fill: 'transparent', z: 10 }); break;
-    case 'text': el = textElement('Votre texte', 8, 20, 40, 12, { fill: 'transparent', z: 10 }); break;
-    case 'image': el = imageElement(state.pendingImage || '', 8, 18, 30, 24, { z: 8 }); break;
-    case 'rect': el = shapeElement('rect', 10, 16, 18, 12, { z: 5 }); break;
-    case 'square': el = shapeElement('square', 10, 16, 16, 16, { z: 5 }); break;
-    case 'circle': el = shapeElement('circle', 10, 16, 16, 16, { z: 5 }); break;
-    case 'ellipse': el = shapeElement('ellipse', 10, 16, 22, 14, { z: 5 }); break;
-    case 'line': el = shapeElement('line', 10, 16, 26, 1.2, { z: 5 }); break;
-    default: return;
-  }
-  items.push(el);
-  state.selectedElementId = el.id;
-  renderAll();
-}
-
-function onImageUpload(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => { state.pendingImage = reader.result; };
-  reader.readAsDataURL(file);
-}
-
-function renderAll() {
-  renderCardList();
-  renderStage();
-  renderProperties();
-}
-
-function renderCardList() {
-  els.cardList.innerHTML = '';
-  state.cards.forEach(card => {
-    const node = els.cardListItemTemplate.content.firstElementChild.cloneNode(true);
-    node.querySelector('.card-name').textContent = card.name;
-    node.querySelector('.card-template').textContent = card.template;
-    if (card.id === state.currentCardId) node.classList.add('active');
-    node.addEventListener('click', () => {
-      state.currentCardId = card.id;
-      state.selectedElementId = null;
-      renderAll();
-    });
-    els.cardList.appendChild(node);
-  });
-}
-
-function createCanvas(card, side, interactive = true) {
-  const canvas = document.createElement('div');
-  canvas.className = `card-canvas ${card.template}`;
-  if (card.template === 'pirate') {
-    canvas.appendChild(makeDiv('pirate-overlay'));
-    canvas.appendChild(makeDiv('pirate-title-bar'));
-    canvas.appendChild(makeDiv('pirate-parchment'));
-    ['tl','tr','bl','br'].forEach(pos => {
-      const c = makeDiv(`pirate-corner ${pos}`);
-      canvas.appendChild(c);
-    });
-  }
-  const elements = [...card.sides[side]].sort((a, b) => a.style.z - b.style.z);
-  elements.forEach(el => canvas.appendChild(renderElement(el, interactive)));
-  if (interactive) {
-    canvas.addEventListener('pointerdown', (e) => {
-      if (e.target === canvas) {
-        state.selectedElementId = null;
-        renderProperties();
-        renderStage();
-      }
-    });
-  }
-  return canvas;
-}
-
-function renderStage() {
-  els.cardStage.innerHTML = '';
-  const card = getCurrentCard();
-  if (!card) return;
-  els.cardStage.appendChild(createCanvas(card, state.currentSide, true));
-}
-
-function renderElement(el, interactive) {
-  const node = document.createElement('div');
-  node.className = `element ${elementClass(el)}`;
-  if (el.id === state.selectedElementId && interactive) node.classList.add('selected');
-  applyStyle(node, el);
-
-  if (el.type === 'text') {
-    node.textContent = el.text;
-  } else if (el.type === 'image') {
-    if (el.src) {
-      const img = document.createElement('img');
-      img.src = el.src;
-      node.appendChild(img);
-    } else {
-      node.textContent = 'Image';
-      node.style.display = 'flex';
-      node.style.alignItems = 'center';
-      node.style.justifyContent = 'center';
-      node.style.color = '#555';
-      node.style.background = 'rgba(255,255,255,.45)';
+    text: '',
+    src: '',
+    shapeKind: 'rect',
+    style: {
+      fontFamily: 'Georgia',
+      fontSize: 18,
+      color: '#2b1d0f',
+      background: 'transparent',
+      textAlign: 'left',
+      borderRadius: 8,
+      border: 'none',
+      padding: 8,
+      fontWeight: 400,
+      fontStyle: 'normal'
     }
+  };
+
+  const presets = {
+    title: {
+      w: 240, h: 48, x: 40, y: 20,
+      text: 'Titre',
+      style: { fontFamily: 'Georgia', fontSize: 26, color: '#3d240c', textAlign: 'center', fontWeight: 700, background: 'transparent', padding: 6 }
+    },
+    text: {
+      w: 220, h: 90, x: 40, y: 310,
+      text: 'Votre texte ici',
+      style: { fontFamily: 'Georgia', fontSize: 18, color: '#2b1d0f', textAlign: 'left', background: 'transparent', padding: 8 }
+    },
+    image: { w: 240, h: 170, x: 40, y: 80 },
+    badge: {
+      w: 70, h: 70, x: 18, y: 18,
+      text: '★',
+      style: { fontFamily: 'Impact', fontSize: 34, color: '#fff7e4', textAlign: 'center', background: '#8e5a25', padding: 8, borderRadius: 999 }
+    },
+    shape: {
+      w: 250, h: 120, x: 35, y: 290,
+      shapeKind: 'rect',
+      style: { background: '#f5e2ad', border: '2px solid rgba(71,43,17,0.55)', borderRadius: 18, padding: 8 }
+    }
+  };
+
+  const merged = {
+    ...base,
+    ...(presets[type] || {}),
+    ...overrides,
+    style: {
+      ...base.style,
+      ...((presets[type] || {}).style || {}),
+      ...(overrides.style || {})
+    }
+  };
+
+  if (type === 'shape') {
+    const shapePreset = getShapePreset(merged.shapeKind);
+    merged.w = overrides.w ?? shapePreset.w;
+    merged.h = overrides.h ?? shapePreset.h;
+    merged.style = { ...merged.style, ...shapePreset.style, ...(overrides.style || {}) };
   }
 
-  if (interactive) {
-    node.addEventListener('pointerdown', (e) => startDragElement(e, el.id));
-    const handle = document.createElement('div');
-    handle.className = 'resize-handle';
-    handle.addEventListener('pointerdown', (e) => startResizeElement(e, el.id));
-    node.appendChild(handle);
-  }
-  return node;
+  return merged;
 }
 
-function elementClass(el) {
-  switch (el.type) {
-    case 'text': return 'text-element';
-    case 'image': return 'image-element';
-    case 'rect': return 'shape-rect';
-    case 'square': return 'shape-square';
-    case 'circle': return 'shape-circle';
-    case 'ellipse': return 'shape-ellipse';
-    case 'line': return 'shape-line';
-    default: return '';
-  }
+function pirateTemplateCard(index = 1) {
+  const card = blankCard(index);
+  card.template = 'pirate';
+  card.frontBg = '#e7d1a3';
+  card.backBg = '#d8c08f';
+  card.faces.front = [
+    createElement('title', { text: 'Nom de la carte', x: 35, y: 20, w: 260, h: 46, z: 3, style: { color: '#4c2a08', fontFamily: 'Georgia', fontSize: 28, textAlign: 'center' } }),
+    createElement('image', { x: 35, y: 78, w: 260, h: 200, z: 2 }),
+    createElement('shape', { x: 28, y: 290, w: 274, h: 120, z: 1, shapeKind: 'rect', style: { background: '#f3dfaa', border: '2px solid rgba(92,56,21,0.5)', borderRadius: 18, padding: 12 } }),
+    createElement('text', { text: 'Description, effet, histoire ou règle de la carte.', x: 42, y: 305, w: 248, h: 95, z: 3, style: { color: '#432612', fontFamily: 'Palatino Linotype', fontSize: 17, background: 'transparent', textAlign: 'left' } }),
+    createElement('badge', { text: '☠', x: 248, y: 18, w: 46, h: 46, z: 4, style: { background: '#8b5a2b', color: '#fff2c9', fontSize: 24 } })
+  ];
+  card.faces.back = [
+    createElement('title', { text: 'Verso', x: 55, y: 36, w: 220, h: 50, z: 2, style: { fontSize: 30, color: '#4c2a08' } }),
+    createElement('shape', { x: 42, y: 110, w: 246, h: 240, z: 1, shapeKind: 'rect', style: { background: '#efd69a', border: '3px solid rgba(92,56,21,0.5)', borderRadius: 24 } }),
+    createElement('text', { text: 'Ajoutez ici le dos de carte, un résumé, une rareté, un logo ou des règles.', x: 58, y: 132, w: 214, h: 190, z: 3, style: { fontFamily: 'Garamond', fontSize: 22, textAlign: 'center', color: '#513113' } })
+  ];
+  return card;
 }
 
-function applyStyle(node, el) {
-  const s = el.style;
-  node.style.left = mm(s.x);
-  node.style.top = mm(s.y);
-  node.style.width = mm(s.w);
-  node.style.height = mm(s.h);
-  node.style.opacity = s.opacity;
-  node.style.zIndex = s.z;
-  node.style.transform = `rotate(${s.rotation}deg)`;
-  node.style.color = s.color;
-  node.style.background = s.fill;
-  node.style.border = `${s.strokeWidth}mm solid ${s.stroke}`;
-  node.style.fontFamily = s.fontFamily;
-  node.style.fontSize = `${s.fontSize / 3.2}mm`;
-  if (el.type === 'line') node.style.borderTop = `${Math.max(0.5, s.strokeWidth || 0.6)}mm solid ${s.stroke}`;
-  if (el.type === 'line') node.style.border = 'none';
+function buildCardFromTemplate(template, index) {
+  return template === 'pirate' ? pirateTemplateCard(index) : blankCard(index);
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try {
+      const saved = JSON.parse(raw);
+      if (Array.isArray(saved.deck) && saved.deck.length) {
+        Object.assign(state, saved);
+        return;
+      }
+    } catch {}
+  }
+  state.deck = [buildCardFromTemplate(state.template, 1)];
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function currentCard() { return state.deck[state.activeCardIndex]; }
+function currentElements() { return currentCard().faces[state.activeFace]; }
+function selectedElement() { return currentElements().find(elm => elm.id === state.selectedId) || null; }
+function sortByZ(a, b) { return a.z - b.z; }
+function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+function snap(v) { return state.showGrid ? Math.round(v / GRID_SIZE) * GRID_SIZE : v; }
+
+function renderPicker() {
+  el.cardPicker.innerHTML = '';
+  state.deck.forEach((card, i) => {
+    const option = document.createElement('option');
+    option.value = i;
+    option.textContent = `${i + 1}. ${card.name}`;
+    if (i === state.activeCardIndex) option.selected = true;
+    el.cardPicker.appendChild(option);
+  });
+}
+
+function applyCanvasBackground() {
+  const card = currentCard();
+  el.canvas.style.background = state.activeFace === 'front' ? card.frontBg : card.backBg;
+}
+
+function renderPirateDecor(target = el.canvas, card = currentCard()) {
+  if (card.template !== 'pirate') return;
+  const frame = document.createElement('div');
+  frame.className = 'pirate-frame';
+  target.appendChild(frame);
+  ['tl', 'tr', 'bl', 'br'].forEach(pos => {
+    const corner = document.createElement('div');
+    corner.className = `pirate-corner ${pos}`;
+    target.appendChild(corner);
+  });
+}
+
+function renderCanvas() {
+  const card = currentCard();
+  const elements = [...currentElements()].sort(sortByZ);
+  el.canvas.innerHTML = '';
+  el.canvas.classList.toggle('show-grid', state.showGrid);
+  applyCanvasBackground();
+  renderPirateDecor();
+
+  elements.forEach(item => {
+    const node = document.getElementById('elementTemplate').content.firstElementChild.cloneNode(true);
+    node.dataset.id = item.id;
+    node.dataset.shapeKind = item.shapeKind || '';
+    node.classList.add(item.type);
+    node.style.left = `${item.x}px`;
+    node.style.top = `${item.y}px`;
+    node.style.width = `${item.w}px`;
+    node.style.height = `${item.h}px`;
+    node.style.zIndex = item.z;
+    node.style.opacity = item.opacity;
+    node.style.transform = `rotate(${item.rotation}deg)`;
+    node.style.fontFamily = item.style.fontFamily;
+    node.style.fontSize = `${item.style.fontSize}px`;
+    node.style.color = item.style.color;
+    node.style.background = item.style.background;
+    node.style.textAlign = item.style.textAlign;
+    node.style.borderRadius = `${item.style.borderRadius || 0}px`;
+    node.style.border = item.style.border || 'none';
+    node.style.padding = `${item.style.padding || 0}px`;
+    node.style.fontWeight = item.style.fontWeight || 400;
+    node.style.fontStyle = item.style.fontStyle || 'normal';
+
+    if (item.type === 'image') {
+      node.insertAdjacentHTML('afterbegin', `<img alt="image carte" src="${item.src || ''}">`);
+    } else if (item.type !== 'shape') {
+      node.insertAdjacentText('afterbegin', item.text || '');
+    }
+
+    if (state.selectedId === item.id) node.classList.add('selected');
+    bindElementInteractions(node, item);
+    el.canvas.appendChild(node);
+  });
+
+  renderUiState();
+}
+
+function renderUiState() {
+  const card = currentCard();
+  el.workspaceTitle.textContent = `${card.name} — ${state.activeFace === 'front' ? 'Recto' : 'Verso'}`;
+  el.workspaceMeta.textContent = `Modèle : ${card.template === 'pirate' ? 'pirate' : 'vierge'} • ${state.deck.length} carte(s)`;
+  el.cardNameInput.value = card.name;
+  el.frontBgColor.value = card.frontBg;
+  el.backBgColor.value = card.backBg;
+
+  el.templateBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.template === state.template));
+  el.faceBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.face === state.activeFace));
+
+  const sel = selectedElement();
+  const disabled = !sel;
+  [el.textContent, el.fontFamily, el.fontSize, el.textColor, el.fillColor, el.opacity, el.rotation].forEach(input => input.disabled = disabled);
+
+  if (sel) {
+    el.textContent.value = sel.text || '';
+    el.fontFamily.value = sel.style.fontFamily || 'Georgia';
+    el.fontSize.value = sel.style.fontSize || 18;
+    el.textColor.value = normalizeColor(sel.style.color || '#2b1d0f');
+    el.fillColor.value = normalizeColor(sel.style.background === 'transparent' ? '#ffffff' : sel.style.background || '#ffffff');
+    el.opacity.value = Math.round((sel.opacity || 1) * 100);
+    el.rotation.value = sel.rotation || 0;
+  } else {
+    el.textContent.value = '';
+  }
+
+  renderPicker();
+  saveState();
+}
+
+function normalizeColor(value) {
+  if (!value || value === 'transparent') return '#ffffff';
+  const s = new Option().style;
+  s.color = value;
+  return s.color.startsWith('rgb') ? rgbToHex(s.color) : value;
+}
+
+function rgbToHex(rgb) {
+  const m = rgb.match(/\d+/g);
+  if (!m) return '#ffffff';
+  return '#' + m.slice(0, 3).map(v => Number(v).toString(16).padStart(2, '0')).join('');
+}
+
+function bindElementInteractions(node, item) {
+  node.addEventListener('mousedown', startMoveOrResize);
+  node.addEventListener('click', (event) => {
+    event.stopPropagation();
+    state.selectedId = item.id;
+    renderCanvas();
+  });
+  node.addEventListener('dblclick', () => {
+    state.selectedId = item.id;
+    if (item.type !== 'image' && item.type !== 'shape') {
+      const next = prompt('Modifier le texte', item.text || '');
+      if (next !== null) {
+        item.text = next;
+        renderCanvas();
+      }
+    }
+  });
+}
+
+function startMoveOrResize(event) {
+  const target = event.currentTarget;
+  const id = target.dataset.id;
+  const item = currentElements().find(e => e.id === id);
+  if (!item) return;
+  state.selectedId = id;
+
+  const canvasRect = el.canvas.getBoundingClientRect();
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const start = { x: item.x, y: item.y, w: item.w, h: item.h };
+  const handle = event.target.closest('.resize-handle');
+  const dir = handle?.dataset.dir || null;
+
+  const onMove = (ev) => {
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+
+    if (!dir) {
+      item.x = clamp(snap(start.x + dx), 0, canvasRect.width - item.w);
+      item.y = clamp(snap(start.y + dy), 0, canvasRect.height - item.h);
+      renderCanvas();
+      return;
+    }
+
+    let nextX = start.x;
+    let nextY = start.y;
+    let nextW = start.w;
+    let nextH = start.h;
+    const minW = item.type === 'shape' && ['circle', 'square'].includes(item.shapeKind) ? 24 : 22;
+    const minH = minW;
+
+    if (dir.includes('e')) nextW = start.w + dx;
+    if (dir.includes('s')) nextH = start.h + dy;
+    if (dir.includes('w')) {
+      nextX = start.x + dx;
+      nextW = start.w - dx;
+    }
+    if (dir.includes('n')) {
+      nextY = start.y + dy;
+      nextH = start.h - dy;
+    }
+
+    if (item.type === 'shape' && item.shapeKind === 'square') {
+      const size = Math.max(minW, Math.max(nextW, nextH));
+      if (dir.includes('w')) nextX = start.x + (start.w - size);
+      if (dir.includes('n')) nextY = start.y + (start.h - size);
+      nextW = size;
+      nextH = size;
+    }
+    if (item.type === 'shape' && item.shapeKind === 'circle') {
+      const size = Math.max(minW, Math.max(nextW, nextH));
+      if (dir.includes('w')) nextX = start.x + (start.w - size);
+      if (dir.includes('n')) nextY = start.y + (start.h - size);
+      nextW = size;
+      nextH = size;
+      item.style.borderRadius = 999;
+    }
+    if (item.type === 'shape' && item.shapeKind === 'line') {
+      nextH = 10;
+      if (dir.includes('n')) nextY = start.y;
+    }
+
+    nextW = clamp(snap(nextW), minW, canvasRect.width);
+    nextH = clamp(snap(nextH), minH, canvasRect.height);
+    nextX = clamp(snap(nextX), 0, canvasRect.width - nextW);
+    nextY = clamp(snap(nextY), 0, canvasRect.height - nextH);
+
+    item.x = nextX;
+    item.y = nextY;
+    item.w = nextW;
+    item.h = nextH;
+    renderCanvas();
+  };
+
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  };
+
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+}
+
+function addElement(type, overrides = {}) {
+  const list = currentElements();
+  const topZ = list.length ? Math.max(...list.map(i => i.z)) + 1 : 1;
+  const item = createElement(type, { z: topZ, ...overrides });
+  list.push(item);
+  state.selectedId = item.id;
+  renderCanvas();
+}
+
+function addShapeFromLibrary(kind, x = 40, y = 40) {
+  addElement('shape', { shapeKind: kind, x, y });
+}
+
+function createNewDeck() {
+  state.deck = [buildCardFromTemplate(state.template, 1)];
+  state.activeCardIndex = 0;
+  state.activeFace = 'front';
+  state.selectedId = null;
+  renderCanvas();
+}
+
+function duplicateCards(count) {
+  const source = currentCard();
+  const currentCount = state.deck.length;
+  const allowed = Math.min(count, MAX_CARDS - currentCount);
+  for (let i = 0; i < allowed; i++) {
+    const clone = deepClone(source);
+    clone.id = uid('card');
+    clone.name = `${source.name} copie ${i + 1}`;
+    Object.values(clone.faces).forEach(face => face.forEach(elm => elm.id = uid(elm.type)));
+    state.deck.push(clone);
+  }
+  state.activeCardIndex = state.deck.length - 1;
+  state.selectedId = null;
+  renderCanvas();
+  if (count > allowed) alert(`Limite atteinte : ${MAX_CARDS} cartes maximum.`);
+}
+
+function cloneCurrentCard() { duplicateCards(1); }
+
+function deleteCurrentCard() {
+  if (state.deck.length === 1) return alert('Il doit rester au moins une carte.');
+  state.deck.splice(state.activeCardIndex, 1);
+  state.activeCardIndex = Math.max(0, state.activeCardIndex - 1);
+  state.selectedId = null;
+  renderCanvas();
+}
+
+function resetCurrentToTemplate() {
+  const index = state.activeCardIndex;
+  const name = currentCard().name;
+  state.deck[index] = buildCardFromTemplate(state.template, index + 1);
+  state.deck[index].name = name;
+  state.selectedId = null;
+  renderCanvas();
+}
+
+function clearFace() {
+  currentCard().faces[state.activeFace] = [];
+  state.selectedId = null;
+  renderCanvas();
 }
 
 function updateSelected(mutator) {
-  const el = getSelectedElement();
-  if (!el) return;
-  mutator(el);
-  renderAll();
+  const sel = selectedElement();
+  if (!sel) return;
+  mutator(sel);
+  renderCanvas();
 }
 
-function renderProperties() {
-  const el = getSelectedElement();
-  const has = Boolean(el);
-  els.emptySelection.classList.toggle('hidden', has);
-  els.properties.classList.toggle('hidden', !has);
-  if (!has) return;
-  els.propText.parentElement.classList.toggle('hidden', !('text' in el));
-  if ('text' in el) els.propText.value = el.text;
-  els.propFont.value = el.style.fontFamily;
-  els.propFontSize.value = el.style.fontSize;
-  els.propColor.value = normalizeColor(el.style.color);
-  els.propFill.value = normalizeColor(el.style.fill === 'transparent' ? '#ffffff' : el.style.fill);
-  els.propStroke.value = normalizeColor(el.style.stroke);
-  els.propStrokeWidth.value = el.style.strokeWidth;
+function uploadImages(files) {
+  [...files].forEach(file => {
+    const reader = new FileReader();
+    reader.onload = () => addElement('image', { src: reader.result, x: 40, y: 90, w: 220, h: 160 });
+    reader.readAsDataURL(file);
+  });
 }
 
-function normalizeColor(v) {
-  if (!v || v === 'transparent') return '#ffffff';
-  return v;
+function exportJson() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cardforge-deck.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
-function startDragElement(e, elementId) {
-  if (e.target.classList.contains('resize-handle')) return;
-  e.preventDefault();
-  state.selectedElementId = elementId;
-  renderProperties();
-  renderStage();
-  const el = getSelectedElement();
-  const canvas = els.cardStage.querySelector('.card-canvas');
-  if (!el || !canvas) return;
-  const startX = e.clientX;
-  const startY = e.clientY;
-  const startPos = { x: el.style.x, y: el.style.y };
-  const scale = getPreviewScale(canvas);
-
-  function move(ev) {
-    const dx = (ev.clientX - startX) / PX_PER_MM / scale;
-    const dy = (ev.clientY - startY) / PX_PER_MM / scale;
-    el.style.x = clamp(startPos.x + dx, 0, CARD_W_MM - el.style.w);
-    el.style.y = clamp(startPos.y + dy, 0, CARD_H_MM - el.style.h);
-    renderStage();
-  }
-  function up() {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
-    renderAll();
-  }
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
-}
-
-function startResizeElement(e, elementId) {
-  e.preventDefault();
-  e.stopPropagation();
-  state.selectedElementId = elementId;
-  renderProperties();
-  renderStage();
-  const el = getSelectedElement();
-  const canvas = els.cardStage.querySelector('.card-canvas');
-  if (!el || !canvas) return;
-  const startX = e.clientX;
-  const startY = e.clientY;
-  const start = { w: el.style.w, h: el.style.h };
-  const scale = getPreviewScale(canvas);
-
-  function move(ev) {
-    let dw = (ev.clientX - startX) / PX_PER_MM / scale;
-    let dh = (ev.clientY - startY) / PX_PER_MM / scale;
-    let newW = Math.max(4, start.w + dw);
-    let newH = Math.max(4, start.h + dh);
-
-    if (el.type === 'square' || el.type === 'circle') {
-      const side = Math.max(newW, newH);
-      newW = side; newH = side;
+function importJson(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = JSON.parse(reader.result);
+      if (!Array.isArray(imported.deck) || !imported.deck.length) throw new Error('deck absent');
+      Object.assign(state, imported);
+      state.activeCardIndex = 0;
+      state.activeFace = 'front';
+      state.selectedId = null;
+      renderCanvas();
+    } catch {
+      alert('Fichier JSON invalide.');
     }
-    if (el.type === 'line') {
-      newH = 1.2;
-    }
-
-    el.style.w = clamp(newW, 2, CARD_W_MM - el.style.x);
-    el.style.h = clamp(newH, 1.2, CARD_H_MM - el.style.y);
-    renderStage();
-  }
-  function up() {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
-    renderAll();
-  }
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
+  };
+  reader.readAsText(file);
 }
 
-function getPreviewScale(canvas) {
-  const matrix = new DOMMatrixReadOnly(getComputedStyle(canvas).transform);
-  return matrix.a || 1;
-}
+function preparePrintDeck() {
+  document.getElementById('printDeck')?.remove();
+  const container = document.createElement('div');
+  container.id = 'printDeck';
+  container.style.display = 'none';
 
-function deleteSelectedElement() {
-  const items = getCurrentSideElements();
-  const idx = items.findIndex(el => el.id === state.selectedElementId);
-  if (idx === -1) return;
-  items.splice(idx, 1);
-  state.selectedElementId = null;
-  renderAll();
-}
+  const makePrintCard = (card, faceName) => {
+    const face = card.faces[faceName].slice().sort(sortByZ);
+    const cardEl = document.createElement('div');
+    cardEl.className = 'print-card';
+    cardEl.style.background = faceName === 'front' ? card.frontBg : card.backBg;
 
-function duplicateSelectedElement() {
-  const el = getSelectedElement();
-  const items = getCurrentSideElements();
-  if (!el || !items) return;
-  const copy = JSON.parse(JSON.stringify(el));
-  copy.id = uid('el');
-  copy.style.x = clamp(copy.style.x + 2, 0, CARD_W_MM - copy.style.w);
-  copy.style.y = clamp(copy.style.y + 2, 0, CARD_H_MM - copy.style.h);
-  items.push(copy);
-  state.selectedElementId = copy.id;
-  renderAll();
-}
+    renderPirateDecor(cardEl, card);
 
-function shiftZ(amount) {
-  updateSelected(el => el.style.z = Math.max(1, el.style.z + amount));
-}
+    face.forEach(item => {
+      const node = document.createElement('div');
+      node.className = `print-element ${item.type}`;
+      node.dataset.shapeKind = item.shapeKind || '';
+      node.style.left = `${item.x / 3.4}mm`;
+      node.style.top = `${item.y / 3.4}mm`;
+      node.style.width = `${item.w / 3.4}mm`;
+      node.style.height = `${item.h / 3.4}mm`;
+      node.style.opacity = item.opacity;
+      node.style.transform = `rotate(${item.rotation}deg)`;
+      node.style.fontFamily = item.style.fontFamily;
+      node.style.fontSize = `${Math.max(2.2, item.style.fontSize / 3.4)}mm`;
+      node.style.color = item.style.color;
+      node.style.background = item.style.background;
+      node.style.textAlign = item.style.textAlign;
+      node.style.borderRadius = `${(item.style.borderRadius || 0) / 3.4}mm`;
+      node.style.border = item.style.border || 'none';
+      node.style.padding = `${(item.style.padding || 0) / 3.4}mm`;
+      node.style.fontWeight = item.style.fontWeight || 400;
+      if (item.type === 'shape' && ['circle', 'ellipse'].includes(item.shapeKind)) node.style.borderRadius = '999mm';
+      if (item.type === 'shape' && item.shapeKind === 'line') {
+        node.style.background = 'transparent';
+        node.style.borderWidth = '0 0 0.7mm 0';
+      }
+      if (item.type === 'shape' && item.shapeKind === 'banner') {
+        node.style.clipPath = 'polygon(0 0, 100% 0, 89% 50%, 100% 100%, 0 100%, 11% 50%)';
+      }
+      if (item.type === 'image') node.innerHTML = `<img alt="image" src="${item.src}">`;
+      else if (item.type !== 'shape') node.textContent = item.text || '';
+      cardEl.appendChild(node);
+    });
 
-function makeDiv(className) {
-  const d = document.createElement('div');
-  d.className = className;
-  return d;
+    return cardEl;
+  };
+
+  state.deck.forEach(card => container.appendChild(makePrintCard(card, 'front')));
+  const pageBreak = document.createElement('div');
+  pageBreak.className = 'print-page-break';
+  container.appendChild(pageBreak);
+  state.deck.forEach(card => container.appendChild(makePrintCard(card, 'back')));
+  document.body.appendChild(container);
 }
 
 function exportPdf() {
-  buildPrintSheet();
+  preparePrintDeck();
   window.print();
 }
 
-function buildPrintSheet() {
-  els.printSheet.innerHTML = '';
+function setupShapeDragAndDrop() {
+  el.shapeLibrary.querySelectorAll('.shape-chip').forEach(chip => {
+    chip.addEventListener('dragstart', (event) => {
+      event.dataTransfer.setData('text/plain', chip.dataset.shape);
+      event.dataTransfer.effectAllowed = 'copy';
+    });
+    chip.addEventListener('click', () => addShapeFromLibrary(chip.dataset.shape, 40, 40));
+  });
 
-  const fronts = state.cards.map(card => createPrintCard(card, 'front'));
-  const backs = state.cards.map(card => createPrintCard(card, 'back'));
+  el.canvas.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    el.canvas.classList.add('drop-target');
+    event.dataTransfer.dropEffect = 'copy';
+  });
+  el.canvas.addEventListener('dragleave', () => el.canvas.classList.remove('drop-target'));
+  el.canvas.addEventListener('drop', (event) => {
+    event.preventDefault();
+    el.canvas.classList.remove('drop-target');
+    const shape = event.dataTransfer.getData('text/plain');
+    if (!shape) return;
+    const rect = el.canvas.getBoundingClientRect();
+    addShapeFromLibrary(shape, clamp(event.clientX - rect.left - 60, 0, rect.width - 20), clamp(event.clientY - rect.top - 40, 0, rect.height - 20));
+  });
 
-  chunk(fronts, 9).forEach(group => els.printSheet.appendChild(createSheetPage(group)));
-  if (backs.some(Boolean)) {
-    chunk(backs, 9).forEach(group => els.printSheet.appendChild(createSheetPage(group)));
-  }
+  el.canvas.addEventListener('click', (event) => {
+    if (event.target === el.canvas) {
+      state.selectedId = null;
+      renderCanvas();
+    }
+  });
 }
 
-function createPrintCard(card, side) {
-  const wrap = document.createElement('div');
-  wrap.className = 'print-card';
-  wrap.appendChild(createCanvas(card, side, false));
-  const canvas = wrap.firstElementChild;
-  canvas.style.position = 'relative';
-  canvas.style.left = '0';
-  canvas.style.top = '0';
-  canvas.style.transform = 'none';
-  canvas.style.boxShadow = 'none';
-  return wrap;
+function bindControls() {
+  el.templateBtns.forEach(btn => btn.addEventListener('click', () => { state.template = btn.dataset.template; renderCanvas(); }));
+  el.faceBtns.forEach(btn => btn.addEventListener('click', () => { state.activeFace = btn.dataset.face; state.selectedId = null; renderCanvas(); }));
+  el.newDeckBtn.addEventListener('click', createNewDeck);
+  el.duplicateBtn.addEventListener('click', () => duplicateCards(Number(el.batchCount.value) || 1));
+  el.cloneCardBtn.addEventListener('click', cloneCurrentCard);
+  el.deleteCardBtn.addEventListener('click', deleteCurrentCard);
+  el.prevCardBtn.addEventListener('click', () => { state.activeCardIndex = Math.max(0, state.activeCardIndex - 1); state.selectedId = null; renderCanvas(); });
+  el.nextCardBtn.addEventListener('click', () => { state.activeCardIndex = Math.min(state.deck.length - 1, state.activeCardIndex + 1); state.selectedId = null; renderCanvas(); });
+  el.cardPicker.addEventListener('change', () => { state.activeCardIndex = Number(el.cardPicker.value); state.selectedId = null; renderCanvas(); });
+  el.addTitleBtn.addEventListener('click', () => addElement('title'));
+  el.addTextBtn.addEventListener('click', () => addElement('text'));
+  el.addImageBtn.addEventListener('click', () => el.imageUpload.click());
+  el.addBadgeBtn.addEventListener('click', () => addElement('badge'));
+  el.addShapeBtn.addEventListener('click', () => addElement('shape'));
+  el.toggleGridBtn.addEventListener('click', () => { state.showGrid = !state.showGrid; renderCanvas(); });
+  el.imageUpload.addEventListener('change', () => uploadImages(el.imageUpload.files));
+  el.textContent.addEventListener('input', () => updateSelected(sel => sel.text = el.textContent.value));
+  el.fontFamily.addEventListener('change', () => updateSelected(sel => sel.style.fontFamily = el.fontFamily.value));
+  el.fontSize.addEventListener('input', () => updateSelected(sel => sel.style.fontSize = Number(el.fontSize.value)));
+  el.textColor.addEventListener('input', () => updateSelected(sel => {
+    if (sel.type === 'shape') sel.style.border = `2px solid ${el.textColor.value}`;
+    else sel.style.color = el.textColor.value;
+  }));
+  el.fillColor.addEventListener('input', () => updateSelected(sel => sel.style.background = el.fillColor.value));
+  el.opacity.addEventListener('input', () => updateSelected(sel => sel.opacity = Number(el.opacity.value) / 100));
+  el.rotation.addEventListener('input', () => updateSelected(sel => sel.rotation = Number(el.rotation.value)));
+  el.alignLeftBtn.addEventListener('click', () => updateSelected(sel => sel.style.textAlign = 'left'));
+  el.alignCenterBtn.addEventListener('click', () => updateSelected(sel => sel.style.textAlign = 'center'));
+  el.alignRightBtn.addEventListener('click', () => updateSelected(sel => sel.style.textAlign = 'right'));
+  el.bringFrontBtn.addEventListener('click', () => updateSelected(sel => sel.z = Math.max(...currentElements().map(i => i.z), 0) + 1));
+  el.sendBackBtn.addEventListener('click', () => updateSelected(sel => sel.z = Math.min(...currentElements().map(i => i.z), 1) - 1));
+  el.cardNameInput.addEventListener('input', () => { currentCard().name = el.cardNameInput.value || 'Carte sans nom'; renderCanvas(); });
+  el.frontBgColor.addEventListener('input', () => { currentCard().frontBg = el.frontBgColor.value; renderCanvas(); });
+  el.backBgColor.addEventListener('input', () => { currentCard().backBg = el.backBgColor.value; renderCanvas(); });
+  el.clearFaceBtn.addEventListener('click', clearFace);
+  el.resetTemplateBtn.addEventListener('click', resetCurrentToTemplate);
+  el.saveBtn.addEventListener('click', saveState);
+  el.exportJsonBtn.addEventListener('click', exportJson);
+  el.importJsonBtn.addEventListener('click', () => el.jsonUpload.click());
+  el.jsonUpload.addEventListener('change', () => importJson(el.jsonUpload.files[0]));
+  el.exportPdfBtn.addEventListener('click', exportPdf);
+
+  window.addEventListener('keydown', (event) => {
+    if ((event.key === 'Delete' || event.key === 'Backspace') && state.selectedId && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+      currentCard().faces[state.activeFace] = currentElements().filter(item => item.id !== state.selectedId);
+      state.selectedId = null;
+      renderCanvas();
+    }
+  });
 }
 
-function createSheetPage(cards) {
-  const page = document.createElement('section');
-  page.className = 'sheet-page';
-  cards.forEach(card => page.appendChild(card));
-  return page;
-}
-
-function chunk(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-init();
-
+loadState();
+bindControls();
+setupShapeDragAndDrop();
+renderCanvas();
