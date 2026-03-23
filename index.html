@@ -3,212 +3,214 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CardForge Studio</title>
-  <link rel="stylesheet" href="styles.css" />
+  <title>Card Set Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@400;500;600;700&family=IM+Fell+English:ital@0;1&family=Libre+Baskerville:wght@400;700&family=Pirata+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="main.css" />
 </head>
 <body>
   <div id="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <h1>CardForge Studio</h1>
-        <p>Créateur de cartes recto / verso, prêt pour impression PDF.</p>
+    <section id="homeScreen" class="screen active">
+      <div class="home-shell">
+        <header class="hero">
+          <div>
+            <p class="eyebrow">Création de cartes</p>
+            <h1>Card Set Studio</h1>
+            <p class="hero-text">Créez des sets de cartes recto/verso, sauvegardés localement, avec images, formes, textes, export PNG/JPEG/PDF et impression propre.</p>
+          </div>
+          <div class="hero-actions">
+            <button class="primary" id="createBlankSetBtn">Nouveau set vierge</button>
+            <button class="accent" id="createPirateSetBtn">Nouveau set pirate</button>
+          </div>
+        </header>
+
+        <section class="home-grid">
+          <div class="panel saved-sets">
+            <div class="panel-head">
+              <h2>Sets sauvegardés</h2>
+              <button id="refreshSetsBtn" class="ghost small">Actualiser</button>
+            </div>
+            <div id="savedSetsList" class="saved-sets-list"></div>
+          </div>
+
+          <div class="panel about-panel">
+            <h2>À propos</h2>
+            <p>Ce studio fonctionne entièrement dans votre navigateur. Les sets sont stockés dans le <strong>localStorage</strong> de ce navigateur, sur cet appareil.</p>
+            <p>Vous pouvez créer un set d’environ 100 cartes, avec recto/verso, éléments redimensionnables, images personnalisées, formes, titres et textes stylisés.</p>
+            <p id="storageInfo">Capacité locale estimée : variable selon le navigateur. En pratique, il faut viser quelques gros sets plutôt qu’un nombre illimité.</p>
+            <div class="about-actions">
+              <button id="importSetBtn" class="ghost">Importer un set JSON</button>
+              <input id="importSetInput" type="file" accept="application/json" hidden />
+            </div>
+          </div>
+        </section>
       </div>
+    </section>
 
-      <section class="panel">
-        <h2>1. Modèles</h2>
-        <div class="template-grid">
-          <button class="template-btn active" data-template="blank">
-            <span>Vierge</span>
-            <small>Carte totalement vide</small>
-          </button>
-          <button class="template-btn" data-template="pirate">
-            <span>Pirate</span>
-            <small>Titre, image, parchemin et décor</small>
-          </button>
-        </div>
-        <button id="newDeckBtn" class="primary full">Créer un nouveau lot avec ce modèle</button>
-      </section>
-
-      <section class="panel">
-        <h2>2. Lot de cartes</h2>
-        <div class="row compact">
-          <label for="batchCount">Nombre</label>
-          <input id="batchCount" type="number" min="1" max="100" value="1" />
-          <button id="duplicateBtn">Dupliquer</button>
-        </div>
-        <div class="row compact">
-          <label for="cardPicker">Carte</label>
-          <select id="cardPicker"></select>
-          <button id="deleteCardBtn" class="danger">Suppr.</button>
-        </div>
-        <div class="row compact">
-          <button id="prevCardBtn">←</button>
-          <button id="nextCardBtn">→</button>
-          <button id="cloneCardBtn">Cloner cette carte</button>
-        </div>
-        <p class="hint">Jusqu'à 100 cartes dans le même lot.</p>
-      </section>
-
-      <section class="panel">
-        <h2>3. Face active</h2>
-        <div class="segmented">
-          <button class="face-btn active" data-face="front">Recto</button>
-          <button class="face-btn" data-face="back">Verso</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>4. Ajouter des éléments</h2>
-        <div class="tool-grid">
-          <button id="addTitleBtn">Titre</button>
-          <button id="addTextBtn">Texte</button>
-          <button id="addImageBtn">Image</button>
-          <button id="addBadgeBtn">Icône / badge</button>
-          <button id="addShapeBtn">Cadre</button>
-          <button id="toggleGridBtn">Grille</button>
-        </div>
-        <input id="imageUpload" type="file" accept="image/*" multiple hidden />
-      </section>
-
-      <section class="panel">
-        <h2>5. Formes à glisser</h2>
-        <p class="hint">Glissez une forme directement sur la carte, puis redimensionnez-la avec les poignées.</p>
-        <div class="shape-library" id="shapeLibrary">
-          <div class="shape-chip" draggable="true" data-shape="rect">
-            <span class="shape-preview preview-rect"></span>
-            <strong>Rectangle</strong>
+    <section id="editorScreen" class="screen">
+      <div class="editor-shell">
+        <header class="topbar no-print">
+          <div class="topbar-left">
+            <button id="backHomeBtn" class="ghost">← Accueil</button>
+            <div class="set-meta">
+              <label>
+                <span>Nom du set</span>
+                <input id="setNameInput" type="text" maxlength="80" placeholder="Nom du set" />
+              </label>
+              <label>
+                <span>Style</span>
+                <select id="setStyleSelect">
+                  <option value="blank">Vierge</option>
+                  <option value="pirate">Pirate</option>
+                </select>
+              </label>
+            </div>
           </div>
-          <div class="shape-chip" draggable="true" data-shape="square">
-            <span class="shape-preview preview-square"></span>
-            <strong>Carré</strong>
+          <div class="topbar-right">
+            <button id="saveSetBtn" class="ghost">Sauvegarder</button>
+            <button id="exportJsonBtn" class="ghost">Sauvegarder en JSON</button>
+            <button id="exportPdfBtn" class="ghost">Exporter PDF</button>
+            <button id="printBtn" class="ghost">Imprimer</button>
           </div>
-          <div class="shape-chip" draggable="true" data-shape="circle">
-            <span class="shape-preview preview-circle"></span>
-            <strong>Cercle</strong>
-          </div>
-          <div class="shape-chip" draggable="true" data-shape="ellipse">
-            <span class="shape-preview preview-ellipse"></span>
-            <strong>Ellipse</strong>
-          </div>
-          <div class="shape-chip" draggable="true" data-shape="line">
-            <span class="shape-preview preview-line"></span>
-            <strong>Ligne</strong>
-          </div>
-          <div class="shape-chip" draggable="true" data-shape="banner">
-            <span class="shape-preview preview-banner"></span>
-            <strong>Bannière</strong>
-          </div>
-        </div>
-      </section>
+        </header>
 
-      <section class="panel">
-        <h2>6. Style</h2>
-        <label>Texte</label>
-        <textarea id="textContent" rows="4" placeholder="Modifier le texte de l'élément sélectionné"></textarea>
-        <div class="style-grid">
-          <label>Police
-            <select id="fontFamily">
-              <option>Georgia</option>
-              <option>Times New Roman</option>
-              <option>Arial</option>
-              <option>Verdana</option>
-              <option>Trebuchet MS</option>
-              <option>Courier New</option>
-              <option>Impact</option>
-              <option>Palatino Linotype</option>
-              <option>Garamond</option>
-              <option>Comic Sans MS</option>
-            </select>
-          </label>
-          <label>Taille
-            <input id="fontSize" type="range" min="8" max="56" value="18" />
-          </label>
-          <label>Couleur
-            <input id="textColor" type="color" value="#2b1d0f" />
-          </label>
-          <label>Fond
-            <input id="fillColor" type="color" value="#f7ebc6" />
-          </label>
-          <label>Opacité
-            <input id="opacity" type="range" min="10" max="100" value="100" />
-          </label>
-          <label>Rotation
-            <input id="rotation" type="range" min="-180" max="180" value="0" />
-          </label>
-        </div>
-        <div class="row compact">
-          <button id="alignLeftBtn">Align. gauche</button>
-          <button id="alignCenterBtn">Centrer</button>
-          <button id="alignRightBtn">Align. droite</button>
-        </div>
-        <div class="row compact">
-          <button id="bringFrontBtn">Au premier plan</button>
-          <button id="sendBackBtn">À l'arrière</button>
-        </div>
-      </section>
+        <div class="workspace">
+          <aside class="sidebar left-sidebar no-print">
+            <section class="tool-section">
+              <h3>Cartes</h3>
+              <div class="stack-actions">
+                <button id="addCardBtn" class="primary small">+ Nouvelle carte</button>
+                <button id="duplicateCardBtn" class="ghost small">Dupliquer</button>
+                <button id="deleteCardBtn" class="danger small">Supprimer</button>
+              </div>
+              <div class="stack-actions compact">
+                <button id="toggleSideBtn" class="accent small">Voir le verso</button>
+                <button id="applyStyleToAllBtn" class="ghost small">Appliquer style à tout</button>
+              </div>
+              <div class="stats" id="cardStats"></div>
+            </section>
 
-      <section class="panel">
-        <h2>7. Carte</h2>
-        <div class="style-grid">
-          <label>Nom de la carte
-            <input id="cardNameInput" type="text" placeholder="Carte 1" />
-          </label>
-          <label>Fond recto
-            <input id="frontBgColor" type="color" value="#f7f1dd" />
-          </label>
-          <label>Fond verso
-            <input id="backBgColor" type="color" value="#f7f1dd" />
-          </label>
-        </div>
-        <div class="row compact">
-          <button id="clearFaceBtn">Vider cette face</button>
-          <button id="resetTemplateBtn">Réappliquer le modèle</button>
-        </div>
-      </section>
+            <section class="tool-section">
+              <h3>Ajouter un élément</h3>
+              <div class="tool-grid">
+                <button data-add="title">Titre</button>
+                <button data-add="text">Texte</button>
+                <button data-add="image">Image</button>
+                <button data-add="badge">Badge</button>
+                <button data-add="rect">Rectangle</button>
+                <button data-add="square">Carré</button>
+                <button data-add="circle">Cercle</button>
+                <button data-add="ellipse">Ellipse</button>
+                <button data-add="line">Ligne</button>
+                <button data-add="banner">Bannière</button>
+              </div>
+              <input id="imageInput" type="file" accept="image/*" hidden />
+            </section>
 
-      <section class="panel">
-        <h2>8. Sauvegarde & export</h2>
-        <div class="tool-grid">
-          <button id="saveBtn" class="primary">Sauvegarder</button>
-          <button id="exportJsonBtn">Exporter JSON</button>
-          <button id="importJsonBtn">Importer JSON</button>
-          <button id="exportPdfBtn" class="primary">Exporter PDF</button>
-        </div>
-        <input id="jsonUpload" type="file" accept="application/json" hidden />
-        <p class="hint">Le PDF utilise l'impression du navigateur. Choisissez « Enregistrer en PDF ».</p>
-      </section>
-    </aside>
+            <section class="tool-section">
+              <h3>Bibliothèque de formes</h3>
+              <div class="shape-library">
+                <div class="shape-chip" data-add="rect">▭ Rectangle</div>
+                <div class="shape-chip" data-add="square">□ Carré</div>
+                <div class="shape-chip" data-add="circle">◯ Cercle</div>
+                <div class="shape-chip" data-add="ellipse">⬭ Ellipse</div>
+                <div class="shape-chip" data-add="line">／ Ligne</div>
+                <div class="shape-chip" data-add="banner">⟪ Bannière</div>
+              </div>
+            </section>
+          </aside>
 
-    <main class="workspace">
-      <header class="workspace-header">
-        <div>
-          <h2 id="workspaceTitle">Carte 1 — Recto</h2>
-          <p id="workspaceMeta">Modèle : vierge</p>
-        </div>
-        <div class="legend">
-          <span>Astuce : glissez, redimensionnez et double-cliquez pour éditer.</span>
-        </div>
-      </header>
+          <main class="center-stage">
+            <div id="pagesContainer" class="pages-container"></div>
+          </main>
 
-      <section class="canvas-wrap">
-        <div id="cardCanvas" class="card-canvas"></div>
-      </section>
-    </main>
+          <aside class="sidebar right-sidebar no-print">
+            <section class="tool-section">
+              <h3>Propriétés</h3>
+              <div id="selectionInfo" class="selection-info">Aucun élément sélectionné.</div>
+              <div class="property-grid">
+                <label>
+                  <span>Texte</span>
+                  <textarea id="propText" rows="3"></textarea>
+                </label>
+                <label>
+                  <span>Police</span>
+                  <select id="propFont">
+                    <option value="Inter">Inter</option>
+                    <option value="Cinzel">Cinzel</option>
+                    <option value="Pirata One">Pirata One</option>
+                    <option value="IM Fell English">IM Fell English</option>
+                    <option value="Libre Baskerville">Libre Baskerville</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Times New Roman">Times New Roman</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Taille</span>
+                  <input id="propFontSize" type="range" min="8" max="72" value="24" />
+                </label>
+                <label>
+                  <span>Couleur</span>
+                  <input id="propColor" type="color" value="#1f2937" />
+                </label>
+                <label>
+                  <span>Fond</span>
+                  <input id="propBgColor" type="color" value="#d6b66f" />
+                </label>
+                <label>
+                  <span>Contour</span>
+                  <input id="propBorderColor" type="color" value="#5b4630" />
+                </label>
+                <label>
+                  <span>Épaisseur contour</span>
+                  <input id="propBorderWidth" type="range" min="0" max="12" value="2" />
+                </label>
+                <label>
+                  <span>Opacité</span>
+                  <input id="propOpacity" type="range" min="10" max="100" value="100" />
+                </label>
+                <label>
+                  <span>Rotation</span>
+                  <input id="propRotation" type="range" min="-180" max="180" value="0" />
+                </label>
+                <label>
+                  <span>Alignement</span>
+                  <select id="propAlign">
+                    <option value="left">Gauche</option>
+                    <option value="center">Centre</option>
+                    <option value="right">Droite</option>
+                  </select>
+                </label>
+              </div>
+              <div class="stack-actions compact">
+                <button id="bringFrontBtn" class="ghost small">Premier plan</button>
+                <button id="sendBackBtn" class="ghost small">Arrière-plan</button>
+              </div>
+              <div class="stack-actions compact">
+                <button id="cloneElementBtn" class="ghost small">Dupliquer élément</button>
+                <button id="removeElementBtn" class="danger small">Supprimer élément</button>
+              </div>
+            </section>
+
+            <section class="tool-section">
+              <h3>Export</h3>
+              <div class="stack-actions">
+                <button id="exportPngBtn" class="primary small">Carte en PNG</button>
+                <button id="exportJpegBtn" class="ghost small">Carte en JPEG</button>
+                <button id="exportAllPngBtn" class="ghost small">Toutes les cartes en PNG</button>
+              </div>
+              <p class="hint">PNG/JPEG pour Numbers, Excel ou insertion dans d’autres documents. PDF direct intégré, plus impression navigateur si besoin.</p>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </section>
   </div>
 
-  <template id="elementTemplate">
-    <div class="card-element" tabindex="0">
-      <div class="resize-handle nw" data-dir="nw"></div>
-      <div class="resize-handle n" data-dir="n"></div>
-      <div class="resize-handle ne" data-dir="ne"></div>
-      <div class="resize-handle e" data-dir="e"></div>
-      <div class="resize-handle se" data-dir="se"></div>
-      <div class="resize-handle s" data-dir="s"></div>
-      <div class="resize-handle sw" data-dir="sw"></div>
-      <div class="resize-handle w" data-dir="w"></div>
-    </div>
-  </template>
-
-  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>
