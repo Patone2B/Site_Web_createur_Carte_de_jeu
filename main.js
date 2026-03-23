@@ -1,1115 +1,756 @@
-const STORAGE_KEY = 'cardSetStudio.sets.v4';
-const LEGACY_STORAGE_KEYS = ['cardSetStudio.sets.v3', 'cardSetStudio.sets.v2'];
-const CARD_W = 252;
-const CARD_H = 352;
-const MIN_SIZE = 24;
-const LINE_MIN_H = 8;
+const STORAGE_KEY = 'deckStudioLocal.v1';
+const CURRENT_KEY = 'deckStudioCurrentDeckId';
+const GRID_SIZE = 10;
+let state = createEmptyState();
+let selectedElementId = null;
+let history = [];
+let historyIndex = -1;
+let dragState = null;
 
-const state = {
-  screen: 'home',
-  sets: loadSets(),
-  currentSetId: null,
-  selectedCardIndex: 0,
-  side: 'front',
-  selectedElementId: null,
-  drag: null,
-};
+const els = {};
 
-const el = {
-  homeScreen: document.getElementById('homeScreen'),
-  editorScreen: document.getElementById('editorScreen'),
-  savedSetsList: document.getElementById('savedSetsList'),
-  refreshSetsBtn: document.getElementById('refreshSetsBtn'),
-  createBlankSetBtn: document.getElementById('createBlankSetBtn'),
-  createPirateSetBtn: document.getElementById('createPirateSetBtn'),
-  importSetBtn: document.getElementById('importSetBtn'),
-  importSetInput: document.getElementById('importSetInput'),
-  setNameInput: document.getElementById('setNameInput'),
-  setStyleSelect: document.getElementById('setStyleSelect'),
-  backHomeBtn: document.getElementById('backHomeBtn'),
-  saveSetBtn: document.getElementById('saveSetBtn'),
-  exportJsonBtn: document.getElementById('exportJsonBtn'),
-  exportPdfBtn: document.getElementById('exportPdfBtn'),
-  printBtn: document.getElementById('printBtn'),
-  addCardBtn: document.getElementById('addCardBtn'),
-  duplicateCardBtn: document.getElementById('duplicateCardBtn'),
-  deleteCardBtn: document.getElementById('deleteCardBtn'),
-  toggleSideBtn: document.getElementById('toggleSideBtn'),
-  applyStyleToAllBtn: document.getElementById('applyStyleToAllBtn'),
-  cardStats: document.getElementById('cardStats'),
-  imageInput: document.getElementById('imageInput'),
-  pagesContainer: document.getElementById('pagesContainer'),
-  selectionInfo: document.getElementById('selectionInfo'),
-  propText: document.getElementById('propText'),
-  propFont: document.getElementById('propFont'),
-  propFontSize: document.getElementById('propFontSize'),
-  propColor: document.getElementById('propColor'),
-  propBgColor: document.getElementById('propBgColor'),
-  propBorderColor: document.getElementById('propBorderColor'),
-  propBorderWidth: document.getElementById('propBorderWidth'),
-  propOpacity: document.getElementById('propOpacity'),
-  propRotation: document.getElementById('propRotation'),
-  propAlign: document.getElementById('propAlign'),
-  bringFrontBtn: document.getElementById('bringFrontBtn'),
-  sendBackBtn: document.getElementById('sendBackBtn'),
-  cloneElementBtn: document.getElementById('cloneElementBtn'),
-  removeElementBtn: document.getElementById('removeElementBtn'),
-  exportPngBtn: document.getElementById('exportPngBtn'),
-  exportJpegBtn: document.getElementById('exportJpegBtn'),
-  exportAllPngBtn: document.getElementById('exportAllPngBtn'),
-};
-
-init();
+document.addEventListener('DOMContentLoaded', init);
 
 function init() {
-  migrateIfNeeded();
+  bindElements();
   bindEvents();
-  renderHome();
-  updateStorageEstimate();
+  renderSavedDecks();
+  const currentId = localStorage.getItem(CURRENT_KEY);
+  if (currentId) {
+    const deck = getAllDecks().find(d => d.id === currentId);
+    if (deck) loadDeck(deck, true);
+  }
+}
+
+function bindElements() {
+  [
+    'startScreen','editorScreen','savedDecks','aboutModal','deckNameInput','saveStatus','cardsList','layersList','cardCanvas','canvasWrap',
+    'cardWidthInput','cardHeightInput','cardBgInput','cardBgOpacityInput','cardBackgroundImageInput','selectionControls','selectionEmpty',
+    'elementNameInput','elementXInput','elementYInput','elementWidthInput','elementHeightInput','elementRotationInput','elementOpacityInput',
+    'elementColorInput','elementBorderColorInput','elementBorderWidthInput','elementRadiusInput','elementFontSizeInput','elementFontFamilyInput',
+    'elementTextInput'
+  ].forEach(id => els[id] = document.getElementById(id));
 }
 
 function bindEvents() {
-  el.createBlankSetBtn?.addEventListener('click', () => createNewSet('blank'));
-  el.createPirateSetBtn?.addEventListener('click', () => createNewSet('pirate'));
-  el.refreshSetsBtn?.addEventListener('click', renderHome);
-  el.backHomeBtn?.addEventListener('click', () => {
-    saveCurrentSet();
-    showScreen('home');
-  });
-  el.saveSetBtn?.addEventListener('click', () => {
-    saveCurrentSet();
-    alert('Set sauvegardé localement.');
-  });
-  el.exportJsonBtn?.addEventListener('click', exportCurrentSetJson);
-  el.exportPdfBtn?.addEventListener('click', exportCurrentSetPdf);
-  el.printBtn?.addEventListener('click', () => window.print());
-  el.addCardBtn?.addEventListener('click', addCard);
-  el.duplicateCardBtn?.addEventListener('click', duplicateCard);
-  el.deleteCardBtn?.addEventListener('click', deleteCard);
-  el.toggleSideBtn?.addEventListener('click', toggleSide);
-  el.applyStyleToAllBtn?.addEventListener('click', applyStyleToAllCards);
+  byId('createDeckBtn').addEventListener('click', () => { state = createEmptyState(); enterEditor(); pushHistory(); });
+  byId('refreshDecksBtn').addEventListener('click', renderSavedDecks);
+  byId('aboutBtn').addEventListener('click', () => toggleModal(true));
+  byId('closeAboutBtn').addEventListener('click', () => toggleModal(false));
+  byId('backToHomeBtn').addEventListener('click', () => showScreen('start'));
+  byId('saveDeckBtn').addEventListener('click', saveCurrentDeck);
+  byId('deckNameInput').addEventListener('input', e => { state.name = e.target.value || 'Mon deck'; markDirty(); renderCardsList(); });
+  byId('addCardBtn').addEventListener('click', addCard);
+  byId('duplicateCardBtn').addEventListener('click', duplicateCurrentCard);
+  byId('deleteCardBtn').addEventListener('click', deleteCurrentCard);
+  byId('frontBtn').addEventListener('click', () => setSide('front'));
+  byId('backBtn').addEventListener('click', () => setSide('back'));
+  byId('flipCardBtn').addEventListener('click', flipAnimation);
+  byId('undoBtn').addEventListener('click', undo);
+  byId('redoBtn').addEventListener('click', redo);
+  byId('centerElementBtn').addEventListener('click', centerSelectedElement);
+  byId('bringFrontBtn').addEventListener('click', () => reorderSelected('front'));
+  byId('sendBackBtn').addEventListener('click', () => reorderSelected('back'));
+  byId('duplicateElementBtn').addEventListener('click', duplicateSelectedElement);
+  byId('deleteElementBtn').addEventListener('click', deleteSelectedElement);
+  byId('exportJsonBtn').addEventListener('click', exportJSON);
+  byId('exportPngBtn').addEventListener('click', () => exportImage('png'));
+  byId('exportJpegBtn').addEventListener('click', () => exportImage('jpeg'));
+  byId('exportPdfBtn').addEventListener('click', exportPDF);
+  byId('imageInput').addEventListener('change', onLocalImageAdd);
+  byId('cardBackgroundImageInput').addEventListener('change', onBackgroundImageAdd);
+  byId('clearCardBgImageBtn').addEventListener('click', clearBackgroundImage);
+  byId('importDeckInput').addEventListener('change', importJSON);
+  byId('snapToggle').addEventListener('change', () => {});
+  byId('showGridToggle').addEventListener('change', e => els.canvasWrap.classList.toggle('show-grid', e.target.checked));
+  byId('safeZoneToggle').addEventListener('change', e => els.canvasWrap.classList.toggle('show-safe-zone', e.target.checked));
 
-  el.setNameInput?.addEventListener('input', () => {
-    const set = currentSet();
-    if (!set) return;
-    set.name = el.setNameInput.value.trim() || 'Set sans nom';
-    touchSet(set, false);
-    renderEditorMeta();
-  });
+  document.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => addElement(btn.dataset.add)));
+  document.querySelectorAll('.template-btn').forEach(btn => btn.addEventListener('click', () => applyTheme(btn.dataset.theme)));
 
-  el.setStyleSelect?.addEventListener('change', () => {
-    const set = currentSet();
-    if (!set) return;
-    set.style = el.setStyleSelect.value;
-    touchSet(set);
-    renderEditor();
-  });
+  ['cardWidthInput','cardHeightInput'].forEach(id => byId(id).addEventListener('input', updateCardDimensions));
+  byId('cardBgInput').addEventListener('input', updateCardBackground);
+  byId('cardBgOpacityInput').addEventListener('input', updateCardBackground);
 
-  document.querySelectorAll('[data-add]').forEach(btn => {
-    btn.addEventListener('click', () => addElement(btn.dataset.add));
-  });
+  const map = {
+    elementNameInput:'name', elementXInput:'x', elementYInput:'y', elementWidthInput:'width', elementHeightInput:'height',
+    elementRotationInput:'rotation', elementOpacityInput:'opacity', elementColorInput:'color', elementBorderColorInput:'borderColor',
+    elementBorderWidthInput:'borderWidth', elementRadiusInput:'radius', elementFontSizeInput:'fontSize', elementFontFamilyInput:'fontFamily',
+    elementTextInput:'text'
+  };
+  Object.entries(map).forEach(([id, prop]) => byId(id).addEventListener('input', e => updateSelectedProp(prop, e.target.value)));
 
-  el.imageInput?.addEventListener('change', handleImageSelected);
-  el.propText?.addEventListener('input', () => updateSelectedElement('text', el.propText.value));
-  el.propFont?.addEventListener('change', () => updateSelectedElement('fontFamily', el.propFont.value));
-  el.propFontSize?.addEventListener('input', () => updateSelectedElement('fontSize', Number(el.propFontSize.value)));
-  el.propColor?.addEventListener('input', () => updateSelectedElement('color', el.propColor.value));
-  el.propBgColor?.addEventListener('input', () => updateSelectedElement('backgroundColor', el.propBgColor.value));
-  el.propBorderColor?.addEventListener('input', () => updateSelectedElement('borderColor', el.propBorderColor.value));
-  el.propBorderWidth?.addEventListener('input', () => updateSelectedElement('borderWidth', Number(el.propBorderWidth.value)));
-  el.propOpacity?.addEventListener('input', () => updateSelectedElement('opacity', Number(el.propOpacity.value) / 100));
-  el.propRotation?.addEventListener('input', () => updateSelectedElement('rotation', Number(el.propRotation.value)));
-  el.propAlign?.addEventListener('change', () => updateSelectedElement('textAlign', el.propAlign.value));
+  byId('textBoldBtn').addEventListener('click', () => toggleSelectedStyle('fontWeight', '700', '400'));
+  byId('textItalicBtn').addEventListener('click', () => toggleSelectedStyle('fontStyle', 'italic', 'normal'));
+  byId('alignLeftBtn').addEventListener('click', () => updateSelectedProp('textAlign', 'left'));
+  byId('alignCenterBtn').addEventListener('click', () => updateSelectedProp('textAlign', 'center'));
+  byId('alignRightBtn').addEventListener('click', () => updateSelectedProp('textAlign', 'right'));
+  byId('lockElementBtn').addEventListener('click', toggleLockSelected);
 
-  el.cloneElementBtn?.addEventListener('click', cloneSelectedElement);
-  el.removeElementBtn?.addEventListener('click', removeSelectedElement);
-  el.bringFrontBtn?.addEventListener('click', () => changeLayer(1));
-  el.sendBackBtn?.addEventListener('click', () => changeLayer(-1));
-  el.exportPngBtn?.addEventListener('click', () => exportVisibleCard('png'));
-  el.exportJpegBtn?.addEventListener('click', () => exportVisibleCard('jpeg'));
-  el.exportAllPngBtn?.addEventListener('click', exportAllCardsPng);
-  el.importSetBtn?.addEventListener('click', () => el.importSetInput?.click());
-  el.importSetInput?.addEventListener('change', importSetFromFile);
-
-  document.addEventListener('pointermove', onPointerMove);
-  document.addEventListener('pointerup', stopInteraction);
-  document.addEventListener('keydown', onGlobalKeyDown);
+  document.addEventListener('keydown', handleKeyDown);
+  els.cardCanvas.addEventListener('pointerdown', onCanvasPointerDown);
 }
 
-function migrateIfNeeded() {
-  if (localStorage.getItem(STORAGE_KEY)) {
-    state.sets = normalizeSets(loadSets());
-    saveSets();
-    return;
-  }
-
-  for (const key of LEGACY_STORAGE_KEYS) {
-    const raw = localStorage.getItem(key);
-    if (!raw) continue;
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        state.sets = normalizeSets(parsed);
-        saveSets();
-        return;
-      }
-    } catch {}
-  }
-
-  state.sets = normalizeSets(state.sets);
-  saveSets();
-}
-
-function loadSets() {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveSets() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.sets));
-  updateStorageEstimate();
-}
-
-function updateStorageEstimate() {
-  const raw = localStorage.getItem(STORAGE_KEY) || '[]';
-  const kb = Math.round(new Blob([raw]).size / 1024);
-  const info = document.getElementById('storageInfo');
-  if (!info) return;
-  info.textContent = `Espace occupé actuellement par les sets : environ ${kb} Ko. Le localStorage tourne souvent autour de 5 Mo selon le navigateur. Avec 100 cartes et beaucoup d’images intégrées, la limite peut arriver vite.`;
-}
-
-function uid(prefix = 'id') {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function defaultSet(style = 'blank') {
-  return normalizeSet({
-    id: uid('set'),
-    name: style === 'pirate' ? 'Nouveau set pirate' : 'Nouveau set vierge',
-    style,
-    createdAt: new Date().toISOString(),
+function createEmptyState() {
+  return {
+    id: uid(),
+    name: 'Mon deck',
+    currentCardId: null,
+    currentSide: 'front',
     updatedAt: new Date().toISOString(),
-    cards: [defaultCard(style)],
-  });
-}
-
-function defaultCard(style = 'blank') {
-  return normalizeCard({
-    id: uid('card'),
-    front: starterElements(style, 'front'),
-    back: starterElements(style, 'back'),
-  });
-}
-
-function starterElements(style, side) {
-  if (style !== 'pirate') return [];
-  if (side === 'front') {
-    return [
-      makeElement('title', { x: 26, y: 18, w: 200, h: 34, text: 'Titre de carte', fontFamily: 'Pirata One', fontSize: 24, color: '#5a381f', backgroundColor: 'transparent', borderWidth: 0, textAlign: 'center' }),
-      makeElement('image', { x: 28, y: 62, w: 196, h: 148, src: '', placeholder: 'Image', borderWidth: 1, borderColor: '#866544' }),
-      makeElement('banner', { x: 46, y: 220, w: 160, h: 28, text: 'Capitaine', fontFamily: 'Cinzel', fontSize: 16, color: '#fff9ec', backgroundColor: '#8a5a2b', borderColor: '#5b3f21', borderWidth: 2 }),
-      makeElement('text', { x: 30, y: 262, w: 192, h: 56, text: 'Ajoutez ici la description pirate ou la capacité spéciale.', fontFamily: 'IM Fell English', fontSize: 16, color: '#4a2f1a', backgroundColor: 'transparent', borderWidth: 0 }),
-    ];
-  }
-  return [
-    makeElement('title', { x: 26, y: 34, w: 200, h: 34, text: 'Verso', fontFamily: 'Pirata One', fontSize: 26, color: '#5a381f', backgroundColor: 'transparent', borderWidth: 0, textAlign: 'center' }),
-    makeElement('text', { x: 40, y: 112, w: 172, h: 120, text: 'Texte de verso, règles, rareté, notes ou effet.', fontFamily: 'Libre Baskerville', fontSize: 15, color: '#4a2f1a', backgroundColor: 'rgba(255,248,234,0.35)', borderColor: '#8f6a42', borderWidth: 1 }),
-    makeElement('badge', { x: 76, y: 272, w: 100, h: 36, text: 'Trésor', fontFamily: 'Cinzel', fontSize: 16, color: '#fff9ec', backgroundColor: '#7a532a', borderColor: '#5b3f21', borderWidth: 2 }),
-  ];
-}
-
-function makeElement(type, overrides = {}) {
-  const shapeTypes = ['rect', 'square', 'circle', 'ellipse', 'badge', 'banner'];
-  const base = {
-    id: uid('el'),
-    type,
-    x: 34,
-    y: 34,
-    w: type === 'line' ? 140 : 120,
-    h: type === 'title' ? 34 : type === 'text' ? 60 : type === 'line' ? 10 : 80,
-    text: type === 'title' ? 'Titre' : type === 'text' ? 'Votre texte' : type === 'badge' ? 'Badge' : type === 'banner' ? 'Bannière' : '',
-    fontFamily: type === 'title' ? 'Cinzel' : 'Inter',
-    fontSize: type === 'title' ? 24 : 16,
-    color: '#1f2937',
-    backgroundColor: shapeTypes.includes(type) ? '#d6b66f' : 'transparent',
-    borderColor: '#5b4630',
-    borderWidth: type === 'image' ? 1 : shapeTypes.includes(type) ? 2 : 0,
-    textAlign: type === 'title' ? 'center' : 'left',
-    opacity: 1,
-    rotation: 0,
-    src: '',
-    placeholder: 'Image',
-    z: 1,
+    cards: [createCard(1)]
   };
-  return normalizeElement({ ...base, ...overrides });
 }
 
-function normalizeSets(sets) {
-  return (Array.isArray(sets) ? sets : []).map(normalizeSet).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-}
-
-function normalizeSet(set) {
-  const style = set?.style === 'pirate' ? 'pirate' : 'blank';
-  const cards = Array.isArray(set?.cards) && set.cards.length ? set.cards.map(normalizeCard) : [defaultCard(style)];
+function createCard(index) {
+  const id = uid();
   return {
-    id: set?.id || uid('set'),
-    name: set?.name || 'Set sans nom',
-    style,
-    createdAt: set?.createdAt || new Date().toISOString(),
-    updatedAt: set?.updatedAt || new Date().toISOString(),
-    cards,
+    id,
+    name: `Carte ${index}`,
+    width: 420,
+    height: 600,
+    sides: {
+      front: createSide('#f8fafc'),
+      back: createSide('#101828')
+    }
   };
 }
 
-function normalizeCard(card) {
-  return {
-    id: card?.id || uid('card'),
-    front: normalizeElements(card?.front),
-    back: normalizeElements(card?.back),
-  };
+function createSide(bgColor) {
+  return { background: { color: bgColor, opacity: 1, image: null }, elements: [] };
 }
 
-function normalizeElements(elements) {
-  const list = (Array.isArray(elements) ? elements : []).map(normalizeElement);
-  normalizeZ(list);
-  return list;
-}
-
-function normalizeElement(item) {
-  if (!item || typeof item !== 'object') return makeElement('rect');
-  const type = item.type || 'rect';
-  const fallback = makeElement(type);
-  return {
-    ...fallback,
-    ...item,
-    id: item.id || uid('el'),
-    type,
-    x: clamp(numberOr(item.x, fallback.x), 0, CARD_W - MIN_SIZE),
-    y: clamp(numberOr(item.y, fallback.y), 0, CARD_H - MIN_SIZE),
-    w: Math.max(MIN_SIZE, numberOr(item.w, fallback.w)),
-    h: Math.max(type === 'line' ? LINE_MIN_H : MIN_SIZE, numberOr(item.h, fallback.h)),
-    fontSize: Math.max(8, numberOr(item.fontSize, fallback.fontSize)),
-    borderWidth: Math.max(0, numberOr(item.borderWidth, fallback.borderWidth)),
-    opacity: clamp(numberOr(item.opacity, fallback.opacity), 0.05, 1),
-    rotation: numberOr(item.rotation, fallback.rotation),
-    z: Math.max(1, numberOr(item.z, fallback.z)),
-  };
-}
-
-function createNewSet(style) {
-  const set = defaultSet(style);
-  state.sets.unshift(set);
-  saveSets();
-  openSet(set.id);
-}
-
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function byId(id) { return document.getElementById(id); }
 function showScreen(name) {
-  state.screen = name;
-  el.homeScreen?.classList.toggle('active', name === 'home');
-  el.editorScreen?.classList.toggle('active', name === 'editor');
-  if (name === 'home') renderHome(); else renderEditor();
+  byId('startScreen').classList.toggle('active', name === 'start');
+  byId('editorScreen').classList.toggle('active', name === 'editor');
+  if (name === 'start') renderSavedDecks();
 }
+function toggleModal(show) { els.aboutModal.classList.toggle('hidden', !show); }
 
-function renderHome() {
-  state.screen = 'home';
-  el.homeScreen?.classList.add('active');
-  el.editorScreen?.classList.remove('active');
-  if (!el.savedSetsList) return;
-
-  const sets = normalizeSets(state.sets);
-  state.sets = sets;
-
-  if (!sets.length) {
-    el.savedSetsList.innerHTML = '<div class="empty-message">Aucun set sauvegardé pour le moment.</div>';
-    return;
-  }
-
-  el.savedSetsList.innerHTML = sets.map(set => `
-    <article class="saved-card">
-      <div class="saved-card-head">
-        <div>
-          <h3>${escapeHtml(set.name)}</h3>
-          <div class="saved-meta">Style : ${set.style === 'pirate' ? 'Pirate' : 'Vierge'} · ${set.cards.length} carte(s)</div>
-          <div class="saved-meta">Mis à jour : ${escapeHtml(formatDate(set.updatedAt))}</div>
-        </div>
-      </div>
-      <div class="saved-actions">
-        <button class="primary small" data-open-set="${set.id}">Ouvrir</button>
-        <button class="ghost small" data-export-set="${set.id}">JSON</button>
-        <button class="ghost small" data-copy-set="${set.id}">Dupliquer</button>
-        <button class="danger small" data-delete-set="${set.id}">Supprimer</button>
-      </div>
-    </article>
-  `).join('');
-
-  el.savedSetsList.querySelectorAll('[data-open-set]').forEach(btn => btn.addEventListener('click', () => openSet(btn.dataset.openSet)));
-  el.savedSetsList.querySelectorAll('[data-export-set]').forEach(btn => btn.addEventListener('click', () => exportSetJsonById(btn.dataset.exportSet)));
-  el.savedSetsList.querySelectorAll('[data-copy-set]').forEach(btn => btn.addEventListener('click', () => duplicateSet(btn.dataset.copySet)));
-  el.savedSetsList.querySelectorAll('[data-delete-set]').forEach(btn => btn.addEventListener('click', () => deleteSet(btn.dataset.deleteSet)));
-}
-
-function renderEditor() {
-  const set = currentSet();
-  if (!set) return showScreen('home');
-  el.homeScreen?.classList.remove('active');
-  el.editorScreen?.classList.add('active');
-  state.screen = 'editor';
-  renderEditorMeta();
-  renderCards();
-  syncPropertiesPanel();
-}
-
-function renderEditorMeta() {
-  const set = currentSet();
-  if (!set) return;
-  if (el.setNameInput) el.setNameInput.value = set.name;
-  if (el.setStyleSelect) el.setStyleSelect.value = set.style;
-  if (el.cardStats) {
-    el.cardStats.innerHTML = `
-      <div><strong>${set.cards.length}</strong> carte(s)</div>
-      <div>Face affichée : <strong>${state.side === 'front' ? 'Recto' : 'Verso'}</strong></div>
-      <div>Carte active : <strong>${state.selectedCardIndex + 1}</strong></div>
-    `;
-  }
-  if (el.toggleSideBtn) {
-    el.toggleSideBtn.textContent = state.side === 'front' ? 'Voir le verso' : 'Voir le recto';
-  }
-}
-
-function renderCards() {
-  const set = currentSet();
-  if (!set || !el.pagesContainer) return;
-
-  el.pagesContainer.innerHTML = set.cards.map((card, index) => {
-    const selected = index === state.selectedCardIndex;
-    const face = state.side === 'front' ? card.front : card.back;
-    const styleClass = set.style === 'pirate' ? 'pirate' : 'blank';
-    return `
-      <section class="page-wrap" data-card-index="${index}">
-        <div class="page-label">Carte ${index + 1}${selected ? ' · active' : ''} · ${state.side === 'front' ? 'Recto' : 'Verso'}</div>
-        <div class="card-page">
-          <div class="card-canvas ${styleClass}" data-canvas-card-index="${index}">
-            ${set.style === 'pirate' ? pirateDecorHtml() : ''}
-            ${renderElements(face, index)}
-          </div>
-        </div>
-      </section>
-    `;
-  }).join('');
-
-  bindCardDomEvents();
-  renderEditorMeta();
-}
-
-function pirateDecorHtml() {
-  return `
-    <div class="pirate-decor-top">✦ Carte Pirate ✦</div>
-    <div class="pirate-decor-bottom"><span>⚓</span><span>☠</span><span>⚓</span></div>
-  `;
-}
-
-function renderElements(elements, cardIndex) {
-  const sorted = [...elements].sort((a, b) => (a.z || 0) - (b.z || 0));
-  return sorted.map(item => renderElement(item, cardIndex)).join('');
-}
-
-function renderElement(item, cardIndex) {
-  const selected = cardIndex === state.selectedCardIndex && item.id === state.selectedElementId;
-  const commonStyle = [
-    `left:${item.x}px`,
-    `top:${item.y}px`,
-    `width:${item.w}px`,
-    `height:${item.h}px`,
-    `z-index:${item.z || 1}`,
-    `transform:rotate(${item.rotation || 0}deg)`,
-    `opacity:${item.opacity ?? 1}`,
-    `color:${item.color || '#1f2937'}`,
-  ].join(';');
-
-  const borderWidth = item.borderWidth || 0;
-  const borderColor = item.borderColor || '#5b4630';
-  const bg = item.backgroundColor || 'transparent';
-  const font = cssSafe(item.fontFamily || 'Inter');
-  const fontSize = item.fontSize || 16;
-  const textAlign = item.textAlign || 'left';
-
-  const contentStyle = [
-    `background:${bg}`,
-    `border:${borderWidth}px solid ${borderColor}`,
-    `font-family:${font}`,
-    `font-size:${fontSize}px`,
-    `text-align:${textAlign}`,
-    styleForType(item),
-  ].join(';');
-
-  let inner = '';
-  if (item.type === 'image') {
-    inner = item.src
-      ? `<img src="${escapeHtml(item.src)}" alt="Image" draggable="false" />`
-      : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;font-size:14px;color:#6b7280;background:#f6f1e5">${escapeHtml(item.placeholder || 'Image')}</div>`;
-  } else if (item.type === 'line') {
-    inner = `<div class="line-bar" style="height:${Math.max(1, borderWidth || 4)}px;background:${item.color || '#1f2937'}"></div>`;
-  } else {
-    inner = `<div style="width:100%;white-space:pre-wrap;word-break:break-word;">${escapeHtml(item.text || '')}</div>`;
-  }
-
-  const handles = selected
-    ? ['nw', 'ne', 'sw', 'se'].map(dir => `<span class="resize-handle ${dir}" data-resize-dir="${dir}" data-card-index="${cardIndex}" data-element-id="${item.id}"></span>`).join('')
-    : '';
-
-  return `
-    <div class="element ${item.type} ${selected ? 'selected' : ''}" data-card-index="${cardIndex}" data-element-id="${item.id}" style="${commonStyle}">
-      <div class="content" style="${contentStyle}">${inner}</div>
-      ${handles}
-    </div>
-  `;
-}
-
-function styleForType(item) {
-  switch (item.type) {
-    case 'badge': return 'border-radius:999px;display:flex;align-items:center;justify-content:center;padding:6px 12px;';
-    case 'rect':
-    case 'square': return 'border-radius:0;';
-    case 'circle':
-    case 'ellipse': return 'border-radius:999px;';
-    case 'banner': return 'display:flex;align-items:center;justify-content:center;padding:6px 10px;';
-    case 'title': return 'padding:4px 6px;font-weight:700;';
-    case 'text': return 'padding:6px;';
-    case 'image': return 'padding:0;';
-    default: return '';
-  }
-}
-
-function bindCardDomEvents() {
-  document.querySelectorAll('.card-canvas').forEach(canvas => canvas.addEventListener('pointerdown', onCanvasPointerDown));
-  document.querySelectorAll('.element').forEach(node => node.addEventListener('pointerdown', onElementPointerDown));
-  document.querySelectorAll('.resize-handle').forEach(node => node.addEventListener('pointerdown', onResizeHandlePointerDown));
-}
-
-function onCanvasPointerDown(e) {
-  const canvas = e.currentTarget;
-  state.selectedCardIndex = Number(canvas.dataset.canvasCardIndex);
-  if (e.target.closest('.element')) return;
-  state.selectedElementId = null;
-  renderEditor();
-}
-
-function onElementPointerDown(e) {
-  if (e.target.closest('.resize-handle')) return;
-  const node = e.currentTarget;
-  const cardIndex = Number(node.dataset.cardIndex);
-  const elementId = node.dataset.elementId;
-  const item = getElementById(elementId, cardIndex);
-
-  state.selectedCardIndex = cardIndex;
-  if (!item) {
-    state.selectedElementId = null;
-    renderEditor();
-    return;
-  }
-
-  state.selectedElementId = elementId;
-  state.drag = {
-    mode: 'move',
-    pointerId: e.pointerId,
-    startX: e.clientX,
-    startY: e.clientY,
-    cardIndex,
-    elementId,
-    start: { x: item.x, y: item.y, w: item.w, h: item.h },
-  };
-
-  node.setPointerCapture?.(e.pointerId);
-  renderCards();
-  syncPropertiesPanel();
-  e.stopPropagation();
-}
-
-function onResizeHandlePointerDown(e) {
-  const node = e.currentTarget;
-  const cardIndex = Number(node.dataset.cardIndex);
-  const elementId = node.dataset.elementId;
-  const dir = node.dataset.resizeDir;
-  const item = getElementById(elementId, cardIndex);
-  if (!item) return;
-
-  state.selectedCardIndex = cardIndex;
-  state.selectedElementId = elementId;
-  state.drag = {
-    mode: 'resize',
-    pointerId: e.pointerId,
-    startX: e.clientX,
-    startY: e.clientY,
-    cardIndex,
-    elementId,
-    dir,
-    start: { x: item.x, y: item.y, w: item.w, h: item.h },
-  };
-
-  node.setPointerCapture?.(e.pointerId);
-  e.stopPropagation();
-  e.preventDefault();
-}
-
-function onPointerMove(e) {
-  const drag = state.drag;
-  if (!drag) return;
-  if (drag.pointerId != null && e.pointerId !== drag.pointerId) return;
-
-  const item = getElementById(drag.elementId, drag.cardIndex);
-  if (!item) return;
-
-  const dx = e.clientX - drag.startX;
-  const dy = e.clientY - drag.startY;
-
-  if (drag.mode === 'move') {
-    item.x = clamp(drag.start.x + dx, 0, CARD_W - item.w);
-    item.y = clamp(drag.start.y + dy, 0, CARD_H - item.h);
-  }
-
-  if (drag.mode === 'resize') resizeItem(item, drag.start, drag.dir, dx, dy);
-
-  renderCards();
-  syncPropertiesPanel();
-}
-
-function resizeItem(item, start, dir, dx, dy) {
-  let x = start.x;
-  let y = start.y;
-  let w = start.w;
-  let h = start.h;
-
-  if (dir.includes('e')) w = start.w + dx;
-  if (dir.includes('s')) h = start.h + dy;
-  if (dir.includes('w')) { w = start.w - dx; x = start.x + dx; }
-  if (dir.includes('n')) { h = start.h - dy; y = start.y + dy; }
-
-  const minH = item.type === 'line' ? LINE_MIN_H : MIN_SIZE;
-  w = Math.max(MIN_SIZE, w);
-  h = Math.max(minH, h);
-
-  if (x < 0) { w += x; x = 0; }
-  if (y < 0) { h += y; y = 0; }
-  if (x + w > CARD_W) w = CARD_W - x;
-  if (y + h > CARD_H) h = CARD_H - y;
-
-  item.x = clamp(x, 0, CARD_W - MIN_SIZE);
-  item.y = clamp(y, 0, CARD_H - minH);
-  item.w = Math.max(MIN_SIZE, w);
-  item.h = Math.max(minH, h);
-}
-
-function stopInteraction() {
-  if (!state.drag) return;
-  touchSet(currentSet(), false);
-  state.drag = null;
-}
-
-function onGlobalKeyDown(e) {
-  const tag = document.activeElement?.tagName;
-  const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable;
-  if (isTyping) return;
-
-  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedElementId) {
-    e.preventDefault();
-    removeSelectedElement();
-    return;
-  }
-
-  if (!state.selectedElementId) return;
-  const item = getElementById(state.selectedElementId);
-  if (!item) return;
-
-  const step = e.shiftKey ? 10 : 1;
-  let moved = false;
-  switch (e.key) {
-    case 'ArrowLeft': item.x = clamp(item.x - step, 0, CARD_W - item.w); moved = true; break;
-    case 'ArrowRight': item.x = clamp(item.x + step, 0, CARD_W - item.w); moved = true; break;
-    case 'ArrowUp': item.y = clamp(item.y - step, 0, CARD_H - item.h); moved = true; break;
-    case 'ArrowDown': item.y = clamp(item.y + step, 0, CARD_H - item.h); moved = true; break;
-  }
-
-  if (moved) {
-    e.preventDefault();
-    touchSet(currentSet(), false);
-    renderCards();
-    syncPropertiesPanel();
-  }
-}
-
-function currentSet() {
-  return state.sets.find(set => set.id === state.currentSetId) || null;
-}
-
-function currentCard() {
-  return currentSet()?.cards?.[state.selectedCardIndex] || null;
-}
-
-function currentElements() {
-  return currentCard()?.[state.side] || null;
-}
-
-function getElementById(id, cardIndex = state.selectedCardIndex) {
-  const card = currentSet()?.cards?.[cardIndex];
-  return card?.[state.side]?.find(item => item.id === id) || null;
-}
-
-function openSet(setId) {
-  const set = state.sets.find(item => item.id === setId);
-  if (!set) return;
-  state.currentSetId = set.id;
-  state.selectedCardIndex = 0;
-  state.selectedElementId = null;
-  state.side = 'front';
+function enterEditor() {
+  if (!state.currentCardId) state.currentCardId = state.cards[0].id;
   showScreen('editor');
+  selectedElementId = null;
+  renderAll();
 }
 
-function duplicateSet(setId) {
-  const source = state.sets.find(item => item.id === setId);
-  if (!source) return;
-  const copy = normalizeSet(JSON.parse(JSON.stringify(source)));
-  copy.id = uid('set');
-  copy.name = `${source.name} (copie)`;
-  copy.createdAt = new Date().toISOString();
-  copy.updatedAt = new Date().toISOString();
-  copy.cards = copy.cards.map(card => ({ ...card, id: uid('card') }));
-  state.sets.unshift(copy);
-  saveSets();
-  renderHome();
+function getCurrentCard() { return state.cards.find(c => c.id === state.currentCardId) || state.cards[0]; }
+function getCurrentSide() { return getCurrentCard().sides[state.currentSide]; }
+function getCurrentElements() { return getCurrentSide().elements; }
+function getSelectedElement() { return getCurrentElements().find(el => el.id === selectedElementId) || null; }
+
+function renderAll() {
+  byId('deckNameInput').value = state.name;
+  renderCardsList();
+  renderCanvas();
+  renderLayers();
+  renderSelectionPanel();
+  renderCardControls();
+  updateSideButtons();
 }
 
-function deleteSet(setId) {
-  const set = state.sets.find(item => item.id === setId);
-  if (!set) return;
-  if (!window.confirm(`Supprimer le set "${set.name}" ?`)) return;
-  state.sets = state.sets.filter(item => item.id !== setId);
-  if (state.currentSetId === setId) {
-    state.currentSetId = null;
-    state.selectedElementId = null;
-    state.selectedCardIndex = 0;
-    state.side = 'front';
-  }
-  saveSets();
-  renderHome();
+function renderCardsList() {
+  const wrap = els.cardsList;
+  wrap.innerHTML = '';
+  state.cards.forEach((card, index) => {
+    const div = document.createElement('div');
+    div.className = `card-thumb ${card.id === state.currentCardId ? 'active' : ''}`;
+    div.innerHTML = `<div><strong>${card.name}</strong><div class="muted">${card.width} × ${card.height}</div></div><span>#${index+1}</span>`;
+    div.addEventListener('click', () => { state.currentCardId = card.id; selectedElementId = null; renderAll(); markDirty(false); });
+    wrap.appendChild(div);
+  });
+}
+
+function renderCanvas() {
+  const card = getCurrentCard();
+  const side = getCurrentSide();
+  const canvas = els.cardCanvas;
+  canvas.innerHTML = '';
+  canvas.style.width = card.width + 'px';
+  canvas.style.height = card.height + 'px';
+  const bg = side.background;
+  canvas.style.background = rgbaFromHex(bg.color, bg.opacity);
+  canvas.style.backgroundImage = bg.image ? `url(${bg.image})` : 'none';
+  canvas.style.backgroundSize = bg.image ? 'cover' : 'initial';
+  canvas.style.backgroundPosition = 'center';
+
+  side.elements.forEach((el, index) => {
+    const node = document.createElement(el.type === 'text' ? 'div' : 'div');
+    node.className = `canvas-element ${el.type === 'text' ? 'text-el' : ''} ${shapeClass(el)} ${selectedElementId === el.id ? 'selected' : ''} ${el.locked ? 'locked' : ''}`;
+    node.dataset.id = el.id;
+    node.style.left = el.x + 'px';
+    node.style.top = el.y + 'px';
+    node.style.width = el.width + 'px';
+    node.style.height = el.height + 'px';
+    node.style.transform = `rotate(${el.rotation || 0}deg)`;
+    node.style.opacity = el.opacity ?? 1;
+    node.style.zIndex = el.zIndex ?? index + 1;
+    node.style.borderRadius = (el.radius ?? 0) + 'px';
+    node.style.border = `${el.borderWidth || 0}px solid ${el.borderColor || 'transparent'}`;
+
+    if (el.type === 'text') {
+      node.textContent = el.text || 'Texte';
+      node.style.color = el.color || '#111827';
+      node.style.fontSize = (el.fontSize || 28) + 'px';
+      node.style.fontFamily = el.fontFamily || 'Inter';
+      node.style.fontWeight = el.fontWeight || '400';
+      node.style.fontStyle = el.fontStyle || 'normal';
+      node.style.textAlign = el.textAlign || 'left';
+      node.style.alignItems = 'center';
+      node.style.justifyContent = el.textAlign === 'center' ? 'center' : el.textAlign === 'right' ? 'flex-end' : 'flex-start';
+      node.style.background = rgbaFromHex(el.backgroundColor || '#000000', el.backgroundOpacity ?? 0);
+    } else if (el.type === 'image') {
+      const img = document.createElement('img');
+      img.src = el.src;
+      img.alt = el.name || 'image';
+      node.appendChild(img);
+    } else {
+      node.style.background = el.type === 'line' ? 'transparent' : (el.color || '#60a5fa');
+      if (el.type === 'line') {
+        node.style.borderTop = `${Math.max(el.height, 2)}px solid ${el.color || '#60a5fa'}`;
+        node.style.height = '0px';
+        node.style.border = '0';
+      }
+      if (el.type === 'frame') {
+        node.style.background = 'transparent';
+        node.style.borderWidth = `${el.borderWidth || 8}px`;
+      }
+      if (el.type === 'badge') {
+        node.style.clipPath = 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)';
+      }
+    }
+
+    node.addEventListener('pointerdown', onElementPointerDown);
+    node.addEventListener('dblclick', () => { if (el.type === 'text') selectedElementId = el.id; renderSelectionPanel(); });
+
+    if (selectedElementId === el.id && !el.locked) {
+      const handle = document.createElement('div');
+      handle.className = 'resize-handle';
+      handle.dataset.resizeId = el.id;
+      handle.addEventListener('pointerdown', onResizePointerDown);
+      node.appendChild(handle);
+    }
+
+    canvas.appendChild(node);
+  });
+}
+
+function shapeClass(el) {
+  if (el.type === 'triangle') return 'shape-triangle';
+  if (el.type === 'line') return 'shape-line';
+  return '';
+}
+
+function renderLayers() {
+  const list = els.layersList;
+  list.innerHTML = '';
+  [...getCurrentElements()].sort((a,b) => (b.zIndex||0)-(a.zIndex||0)).forEach(el => {
+    const item = document.createElement('div');
+    item.className = `layer-item ${el.id === selectedElementId ? 'active' : ''}`;
+    item.innerHTML = `<span>${el.name || el.type}</span><small>${el.type}</small>`;
+    item.addEventListener('click', () => { selectedElementId = el.id; renderAll(); });
+    list.appendChild(item);
+  });
+}
+
+function renderCardControls() {
+  const card = getCurrentCard();
+  const bg = getCurrentSide().background;
+  els.cardWidthInput.value = card.width;
+  els.cardHeightInput.value = card.height;
+  els.cardBgInput.value = bg.color || '#ffffff';
+  els.cardBgOpacityInput.value = bg.opacity ?? 1;
+}
+
+function renderSelectionPanel() {
+  const el = getSelectedElement();
+  els.selectionControls.classList.toggle('hidden', !el);
+  els.selectionEmpty.classList.toggle('hidden', !!el);
+  if (!el) return;
+  els.elementNameInput.value = el.name || '';
+  els.elementXInput.value = Math.round(el.x || 0);
+  els.elementYInput.value = Math.round(el.y || 0);
+  els.elementWidthInput.value = Math.round(el.width || 0);
+  els.elementHeightInput.value = Math.round(el.height || 0);
+  els.elementRotationInput.value = Math.round(el.rotation || 0);
+  els.elementOpacityInput.value = el.opacity ?? 1;
+  els.elementColorInput.value = normalizeHex(el.color || '#4f46e5');
+  els.elementBorderColorInput.value = normalizeHex(el.borderColor || '#ffffff');
+  els.elementBorderWidthInput.value = el.borderWidth || 0;
+  els.elementRadiusInput.value = el.radius || 0;
+  els.elementFontSizeInput.value = el.fontSize || 28;
+  els.elementFontFamilyInput.value = el.fontFamily || 'Inter';
+  els.elementTextInput.value = el.text || '';
+}
+
+function updateSideButtons() {
+  byId('frontBtn').className = `btn tiny ${state.currentSide === 'front' ? 'primary' : 'ghost'}`;
+  byId('backBtn').className = `btn tiny ${state.currentSide === 'back' ? 'primary' : 'ghost'}`;
 }
 
 function addCard() {
-  const set = currentSet();
-  if (!set) return;
-  set.cards.push(defaultCard(set.style));
-  state.selectedCardIndex = set.cards.length - 1;
-  state.selectedElementId = null;
-  touchSet(set);
-  renderEditor();
-  scrollToCard(state.selectedCardIndex);
+  const card = createCard(state.cards.length + 1);
+  state.cards.push(card);
+  state.currentCardId = card.id;
+  selectedElementId = null;
+  touch();
 }
 
-function duplicateCard() {
-  const set = currentSet();
-  const card = currentCard();
-  if (!set || !card) return;
-  const copy = normalizeCard(JSON.parse(JSON.stringify(card)));
-  copy.id = uid('card');
-  copy.front.forEach(item => { item.id = uid('el'); });
-  copy.back.forEach(item => { item.id = uid('el'); });
-  set.cards.splice(state.selectedCardIndex + 1, 0, copy);
-  state.selectedCardIndex += 1;
-  state.selectedElementId = null;
-  touchSet(set);
-  renderEditor();
-  scrollToCard(state.selectedCardIndex);
+function duplicateCurrentCard() {
+  const current = structuredClone(getCurrentCard());
+  current.id = uid();
+  current.name = current.name + ' copie';
+  Object.values(current.sides).forEach(side => side.elements.forEach(el => el.id = uid()));
+  state.cards.push(current);
+  state.currentCardId = current.id;
+  selectedElementId = null;
+  touch();
 }
 
-function deleteCard() {
-  const set = currentSet();
-  if (!set || set.cards.length <= 1) {
-    alert('Le set doit garder au moins une carte.');
-    return;
-  }
-  set.cards.splice(state.selectedCardIndex, 1);
-  state.selectedCardIndex = clamp(state.selectedCardIndex, 0, set.cards.length - 1);
-  state.selectedElementId = null;
-  touchSet(set);
-  renderEditor();
+function deleteCurrentCard() {
+  if (state.cards.length === 1) return alert('Il faut garder au moins une carte.');
+  state.cards = state.cards.filter(c => c.id !== state.currentCardId);
+  state.currentCardId = state.cards[0].id;
+  selectedElementId = null;
+  touch();
 }
 
-function toggleSide() {
-  state.side = state.side === 'front' ? 'back' : 'front';
-  state.selectedElementId = null;
-  renderEditor();
+function setSide(side) {
+  state.currentSide = side;
+  selectedElementId = null;
+  renderAll();
 }
 
-function applyStyleToAllCards() {
-  const set = currentSet();
-  const card = currentCard();
-  if (!set || !card) return;
-
-  set.cards.forEach((target, idx) => {
-    if (idx === state.selectedCardIndex) return;
-    if (!target[state.side]?.length) {
-      target[state.side] = JSON.parse(JSON.stringify(card[state.side] || []));
-      target[state.side].forEach(item => { item.id = uid('el'); });
-    }
-  });
-
-  touchSet(set);
-  renderEditor();
-  alert('Style appliqué aux autres cartes seulement si la face était vide.');
+function flipAnimation() {
+  els.cardCanvas.classList.remove('flip-anim');
+  void els.cardCanvas.offsetWidth;
+  els.cardCanvas.classList.add('flip-anim');
+  setTimeout(() => setSide(state.currentSide === 'front' ? 'back' : 'front'), 250);
 }
 
 function addElement(type) {
-  if (type === 'image') {
-    el.imageInput?.click();
-    return;
-  }
-
-  const elements = currentElements();
-  if (!elements) return;
-
-  const next = makeElement(type);
-  next.x = clamp(46 + (elements.length % 4) * 14, 0, CARD_W - next.w);
-  next.y = clamp(46 + (elements.length % 5) * 14, 0, CARD_H - next.h);
-  next.z = maxZ(elements) + 1;
-
-  if (type === 'square' || type === 'circle') {
-    next.w = 80;
-    next.h = 80;
-  }
-  if (type === 'ellipse') {
-    next.w = 110;
-    next.h = 72;
-  }
-  if (type === 'line') {
-    next.h = 10;
-    next.borderWidth = 4;
-    next.backgroundColor = 'transparent';
-  }
-
-  elements.push(next);
-  state.selectedElementId = next.id;
-  touchSet(currentSet());
-  renderEditor();
+  const element = baseElement(type);
+  getCurrentElements().push(element);
+  selectedElementId = element.id;
+  normalizeZIndices();
+  touch();
 }
 
-function handleImageSelected(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = () => {
-    const elements = currentElements();
-    if (!elements) return;
-    const imageEl = makeElement('image', {
-      src: reader.result,
-      w: 150,
-      h: 110,
-      x: 50,
-      y: 50,
-      borderWidth: 1,
-      borderColor: '#8c6d47',
-      z: maxZ(elements) + 1,
-    });
-    elements.push(imageEl);
-    state.selectedElementId = imageEl.id;
-    touchSet(currentSet());
-    renderEditor();
-    if (el.imageInput) el.imageInput.value = '';
-  };
-  reader.readAsDataURL(file);
-}
-
-function syncPropertiesPanel() {
-  const item = getElementById(state.selectedElementId);
-  if (!item) {
-    if (el.selectionInfo) el.selectionInfo.textContent = 'Aucun élément sélectionné.';
-    if (el.propText) el.propText.value = '';
-    if (el.propFontSize) el.propFontSize.value = '24';
-    if (el.propBorderWidth) el.propBorderWidth.value = '0';
-    return;
-  }
-
-  const borderHint = ['rect', 'square', 'circle', 'ellipse', 'badge', 'banner', 'image'].includes(item.type)
-    ? ` · Bord ${Math.round(item.borderWidth || 0)} px`
-    : '';
-
-  if (el.selectionInfo) el.selectionInfo.textContent = `Élément : ${labelForType(item.type)} · Position ${Math.round(item.x)}, ${Math.round(item.y)} · Taille ${Math.round(item.w)} × ${Math.round(item.h)}${borderHint}`;
-  if (el.propText) el.propText.value = item.text || '';
-  if (el.propFont) el.propFont.value = item.fontFamily || 'Inter';
-  if (el.propFontSize) el.propFontSize.value = String(item.fontSize || 16);
-  if (el.propColor) el.propColor.value = normalizeColor(item.color, '#1f2937');
-  if (el.propBgColor) el.propBgColor.value = normalizeColor(item.backgroundColor, '#d6b66f');
-  if (el.propBorderColor) el.propBorderColor.value = normalizeColor(item.borderColor, '#5b4630');
-  if (el.propBorderWidth) el.propBorderWidth.value = String(item.borderWidth || 0);
-  if (el.propOpacity) el.propOpacity.value = String(Math.round((item.opacity ?? 1) * 100));
-  if (el.propRotation) el.propRotation.value = String(item.rotation || 0);
-  if (el.propAlign) el.propAlign.value = item.textAlign || 'left';
-}
-
-function updateSelectedElement(key, value) {
-  const item = getElementById(state.selectedElementId);
-  if (!item) return;
-
-  item[key] = value;
-  if (key === 'borderWidth') item.borderWidth = Math.max(0, numberOr(value, item.borderWidth));
-  if (key === 'fontSize') item.fontSize = Math.max(8, numberOr(value, item.fontSize));
-  if (key === 'opacity') item.opacity = clamp(numberOr(value, item.opacity), 0.05, 1);
-  if (key === 'rotation') item.rotation = numberOr(value, item.rotation);
-
-  touchSet(currentSet(), false);
-  renderCards();
-  syncPropertiesPanel();
-}
-
-function cloneSelectedElement() {
-  const item = getElementById(state.selectedElementId);
-  const elements = currentElements();
-  if (!item || !elements) return;
-
-  const copy = normalizeElement(JSON.parse(JSON.stringify(item)));
-  copy.id = uid('el');
-  copy.x = clamp(item.x + 12, 0, CARD_W - item.w);
-  copy.y = clamp(item.y + 12, 0, CARD_H - item.h);
-  copy.z = maxZ(elements) + 1;
-  elements.push(copy);
-  state.selectedElementId = copy.id;
-  touchSet(currentSet());
-  renderEditor();
-}
-
-function removeSelectedElement() {
-  const elements = currentElements();
-  if (!elements || !state.selectedElementId) return;
-  const index = elements.findIndex(item => item.id === state.selectedElementId);
-  if (index === -1) return;
-  elements.splice(index, 1);
-  normalizeZ(elements);
-  state.selectedElementId = null;
-  touchSet(currentSet());
-  renderEditor();
-}
-
-function changeLayer(direction) {
-  const item = getElementById(state.selectedElementId);
-  const elements = currentElements();
-  if (!item || !elements || elements.length < 2) return;
-
-  normalizeZ(elements);
-  item.z = direction > 0 ? maxZ(elements) + 1 : 0;
-  normalizeZ(elements);
-  touchSet(currentSet(), false);
-  renderCards();
-  syncPropertiesPanel();
-}
-
-function normalizeZ(elements) {
-  elements.sort((a, b) => (a.z || 0) - (b.z || 0)).forEach((item, index) => {
-    item.z = index + 1;
-  });
-}
-
-function maxZ(elements) {
-  return Math.max(0, ...elements.map(item => item.z || 0));
-}
-
-function touchSet(set, persist = true) {
-  if (!set) return;
-  set.updatedAt = new Date().toISOString();
-  state.sets = normalizeSets(state.sets);
-  if (persist) saveSets();
-}
-
-function saveCurrentSet() {
-  const set = currentSet();
-  if (!set) return;
-  touchSet(set);
-}
-
-function exportSetJsonById(setId) {
-  const set = state.sets.find(item => item.id === setId);
-  if (!set) return;
-  const payload = { app: 'Card Set Studio', version: 4, exportedAt: new Date().toISOString(), set };
-  downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), `${safeName(set.name)}.json`);
-}
-
-function exportCurrentSetJson() {
-  const set = currentSet();
-  if (!set) return;
-  exportSetJsonById(set.id);
-}
-
-async function exportVisibleCard(format = 'png') {
-  const oldSelected = state.selectedElementId;
-  state.selectedElementId = null;
-  renderCards();
-
-  const targetNode = document.querySelector(`.card-canvas[data-canvas-card-index="${state.selectedCardIndex}"]`);
-  if (!targetNode) {
-    state.selectedElementId = oldSelected;
-    renderCards();
-    return;
-  }
-
-  const canvas = await html2canvas(targetNode, { backgroundColor: null, scale: 3, useCORS: true });
-  const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
-  const filename = `${safeName(currentSet().name)}-carte-${state.selectedCardIndex + 1}-${state.side}.${format === 'jpeg' ? 'jpg' : 'png'}`;
-
-  canvas.toBlob(blob => {
-    downloadBlob(blob, filename);
-    state.selectedElementId = oldSelected;
-    renderCards();
-  }, mime, 0.95);
-}
-
-async function exportAllCardsPng() {
-  const set = currentSet();
-  if (!set) return;
-  const prevCard = state.selectedCardIndex;
-  const prevSel = state.selectedElementId;
-  state.selectedElementId = null;
-
-  for (let i = 0; i < set.cards.length; i += 1) {
-    state.selectedCardIndex = i;
-    renderCards();
-    const targetNode = document.querySelector(`.card-canvas[data-canvas-card-index="${i}"]`);
-    if (!targetNode) continue;
-    const canvas = await html2canvas(targetNode, { backgroundColor: null, scale: 3, useCORS: true });
-    await new Promise(resolve => {
-      canvas.toBlob(blob => {
-        downloadBlob(blob, `${safeName(set.name)}-carte-${i + 1}-${state.side}.png`);
-        resolve();
-      }, 'image/png');
-    });
-  }
-
-  state.selectedCardIndex = prevCard;
-  state.selectedElementId = prevSel;
-  renderEditor();
-}
-
-async function exportCurrentSetPdf() {
-  const set = currentSet();
-  if (!set || !window.jspdf?.jsPDF) {
-    alert('Export PDF indisponible.');
-    return;
-  }
-
-  const previousCardIndex = state.selectedCardIndex;
-  const previousSelectedElement = state.selectedElementId;
-  state.selectedElementId = null;
-
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const cardWidthMm = 63;
-  const cardHeightMm = 88;
-  const marginX = 10;
-  const marginY = 10;
-  const gapX = 5;
-  const gapY = 5;
-  const pageWidth = 210;
-  const pageHeight = 297;
-  const cols = Math.floor((pageWidth - marginX * 2 + gapX) / (cardWidthMm + gapX));
-  const rows = Math.floor((pageHeight - marginY * 2 + gapY) / (cardHeightMm + gapY));
-  const cardsPerPage = Math.max(1, cols * rows);
-
-  for (let i = 0; i < set.cards.length; i += 1) {
-    state.selectedCardIndex = i;
-    renderCards();
-    const targetNode = document.querySelector(`.card-canvas[data-canvas-card-index="${i}"]`);
-    if (!targetNode) continue;
-
-    const canvas = await html2canvas(targetNode, { backgroundColor: '#ffffff', scale: 3, useCORS: true });
-    const imgData = canvas.toDataURL('image/png');
-
-    if (i > 0 && i % cardsPerPage === 0) pdf.addPage();
-
-    const indexOnPage = i % cardsPerPage;
-    const col = indexOnPage % cols;
-    const row = Math.floor(indexOnPage / cols);
-    const x = marginX + col * (cardWidthMm + gapX);
-    const y = marginY + row * (cardHeightMm + gapY);
-
-    pdf.addImage(imgData, 'PNG', x, y, cardWidthMm, cardHeightMm);
-  }
-
-  state.selectedCardIndex = previousCardIndex;
-  state.selectedElementId = previousSelectedElement;
-  renderEditor();
-  pdf.save(`${safeName(set.name)}-${state.side}.pdf`);
-}
-
-async function importSetFromFile(e) {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  try {
-    const text = await file.text();
-    const data = JSON.parse(text);
-    const imported = normalizeSet(data?.set && data?.app ? data.set : data);
-    imported.id = uid('set');
-    imported.name = imported.name ? `${imported.name} (importé)` : 'Set importé';
-    imported.createdAt = new Date().toISOString();
-    imported.updatedAt = new Date().toISOString();
-    state.sets.unshift(imported);
-    saveSets();
-    openSet(imported.id);
-  } catch {
-    alert('Import impossible : fichier JSON invalide.');
-  } finally {
-    if (e.target) e.target.value = '';
-  }
-}
-
-function scrollToCard(index) {
-  document.querySelector(`.page-wrap[data-card-index="${index}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+function baseElement(type) {
+  const common = { id: uid(), name: labelForType(type), type, x: 40, y: 40, width: 140, height: 90, rotation: 0, opacity: 1, color: '#7c3aed', borderColor: '#ffffff', borderWidth: 0, radius: 12, zIndex: getCurrentElements().length + 1, locked: false };
+  if (type === 'text') return { ...common, width: 240, height: 80, text: 'Nouveau texte', color: '#111827', fontSize: 28, fontFamily: 'Inter', textAlign: 'left', fontWeight: '400', fontStyle: 'normal', backgroundColor: '#000000', backgroundOpacity: 0 };
+  if (type === 'image') return { ...common, width: 180, height: 180, src: '' };
+  if (type === 'circle') return { ...common, width: 120, height: 120, radius: 999, color: '#38bdf8' };
+  if (type === 'line') return { ...common, width: 180, height: 6, color: '#f43f5e', borderWidth: 0, radius: 0 };
+  if (type === 'triangle') return { ...common, width: 140, height: 120, color: '#f59e0b', radius: 0 };
+  if (type === 'badge') return { ...common, width: 130, height: 130, color: '#e879f9', radius: 0 };
+  if (type === 'frame') return { ...common, width: 220, height: 300, color: '#000000', borderColor: '#fde68a', borderWidth: 8, radius: 24 };
+  return common;
 }
 
 function labelForType(type) {
-  return ({
-    title: 'Titre', text: 'Texte', image: 'Image', badge: 'Badge', rect: 'Rectangle',
-    square: 'Carré', circle: 'Cercle', ellipse: 'Ellipse', line: 'Ligne', banner: 'Bannière',
-  }[type]) || type;
+  return ({ text:'Texte', image:'Image', rect:'Rectangle', circle:'Cercle', triangle:'Triangle', line:'Ligne', badge:'Badge', frame:'Cadre' })[type] || type;
 }
 
-function formatDate(iso) {
-  try { return new Date(iso).toLocaleString('fr-FR'); } catch { return iso; }
+function onLocalImageAdd(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  fileToDataURL(file).then(src => {
+    const element = baseElement('image');
+    element.src = src;
+    element.name = file.name;
+    getCurrentElements().push(element);
+    selectedElementId = element.id;
+    normalizeZIndices();
+    touch();
+    e.target.value = '';
+  });
 }
 
-function safeName(value) {
-  return (value || 'set').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-').toLowerCase();
+function onBackgroundImageAdd(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  fileToDataURL(file).then(src => {
+    getCurrentSide().background.image = src;
+    touch();
+    e.target.value = '';
+  });
+}
+function clearBackgroundImage() { getCurrentSide().background.image = null; touch(); }
+
+function fileToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
-function cssSafe(v) {
-  const value = String(v || 'Inter');
-  return value.includes(' ') ? `'${value}'` : value;
+function onCanvasPointerDown(e) {
+  if (e.target === els.cardCanvas) {
+    selectedElementId = null;
+    renderAll();
+  }
 }
 
-function clamp(n, min, max) {
-  return Math.max(min, Math.min(max, n));
+function onElementPointerDown(e) {
+  if (e.target.classList.contains('resize-handle')) return;
+  const id = e.currentTarget.dataset.id;
+  const element = getCurrentElements().find(el => el.id === id);
+  if (!element) return;
+  selectedElementId = id;
+  renderSelectionPanel();
+  renderLayers();
+  renderCanvas();
+  if (element.locked) return;
+  const rect = els.cardCanvas.getBoundingClientRect();
+  dragState = { type: 'move', id, startX: e.clientX, startY: e.clientY, originX: element.x, originY: element.y, rect };
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp, { once: true });
 }
 
-function numberOr(value, fallback) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+function onResizePointerDown(e) {
+  e.stopPropagation();
+  const id = e.target.dataset.resizeId;
+  const element = getCurrentElements().find(el => el.id === id);
+  if (!element || element.locked) return;
+  dragState = { type: 'resize', id, startX: e.clientX, startY: e.clientY, originW: element.width, originH: element.height };
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp, { once: true });
 }
 
-function escapeHtml(str) {
-  return String(str ?? '').replace(/[&<>"]/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[s]));
+function onPointerMove(e) {
+  if (!dragState) return;
+  const el = getCurrentElements().find(item => item.id === dragState.id);
+  if (!el) return;
+  if (dragState.type === 'move') {
+    let x = dragState.originX + (e.clientX - dragState.startX);
+    let y = dragState.originY + (e.clientY - dragState.startY);
+    if (byId('snapToggle').checked) { x = snap(x); y = snap(y); }
+    el.x = clamp(x, 0, getCurrentCard().width - el.width);
+    el.y = clamp(y, 0, getCurrentCard().height - el.height);
+  } else {
+    let w = dragState.originW + (e.clientX - dragState.startX);
+    let h = dragState.originH + (e.clientY - dragState.startY);
+    if (byId('snapToggle').checked) { w = snap(w); h = snap(h); }
+    el.width = Math.max(20, w);
+    el.height = Math.max(20, h);
+    if (el.type === 'circle') el.radius = 999;
+  }
+  renderCanvas();
+  renderSelectionPanel();
 }
 
-function normalizeColor(value, fallback) {
-  if (!value || value === 'transparent' || String(value).startsWith('rgba')) return fallback;
-  return value;
+function onPointerUp() {
+  window.removeEventListener('pointermove', onPointerMove);
+  dragState = null;
+  markDirty();
+  pushHistory();
 }
 
+function updateCardDimensions() {
+  const card = getCurrentCard();
+  card.width = +els.cardWidthInput.value;
+  card.height = +els.cardHeightInput.value;
+  touch();
+}
+
+function updateCardBackground() {
+  const bg = getCurrentSide().background;
+  bg.color = els.cardBgInput.value;
+  bg.opacity = parseFloat(els.cardBgOpacityInput.value);
+  touch();
+}
+
+function updateSelectedProp(prop, rawValue) {
+  const el = getSelectedElement();
+  if (!el) return;
+  let value = rawValue;
+  if (['x','y','width','height','rotation','fontSize','borderWidth','radius'].includes(prop)) value = +value;
+  if (['opacity'].includes(prop)) value = parseFloat(value);
+  el[prop] = value;
+  if (prop === 'width' || prop === 'height') {
+    el[prop] = Math.max(0, value);
+  }
+  touch();
+}
+
+function toggleSelectedStyle(prop, onValue, offValue) {
+  const el = getSelectedElement();
+  if (!el) return;
+  el[prop] = el[prop] === onValue ? offValue : onValue;
+  touch();
+}
+
+function toggleLockSelected() {
+  const el = getSelectedElement();
+  if (!el) return;
+  el.locked = !el.locked;
+  touch();
+}
+
+function centerSelectedElement() {
+  const el = getSelectedElement();
+  if (!el) return;
+  const card = getCurrentCard();
+  el.x = Math.round((card.width - el.width) / 2);
+  el.y = Math.round((card.height - el.height) / 2);
+  touch();
+}
+
+function reorderSelected(where) {
+  const elements = getCurrentElements();
+  const el = getSelectedElement();
+  if (!el) return;
+  if (where === 'front') el.zIndex = Math.max(...elements.map(e => e.zIndex || 1)) + 1;
+  else el.zIndex = 0;
+  normalizeZIndices();
+  touch();
+}
+
+function normalizeZIndices() {
+  const elements = getCurrentElements();
+  elements.sort((a,b)=>(a.zIndex||0)-(b.zIndex||0)).forEach((el, i) => el.zIndex = i + 1);
+}
+
+function duplicateSelectedElement() {
+  const el = getSelectedElement();
+  if (!el) return;
+  const copy = structuredClone(el);
+  copy.id = uid();
+  copy.name = (copy.name || copy.type) + ' copie';
+  copy.x += 20; copy.y += 20; copy.zIndex += 1;
+  getCurrentElements().push(copy);
+  selectedElementId = copy.id;
+  normalizeZIndices();
+  touch();
+}
+
+function deleteSelectedElement() {
+  if (!selectedElementId) return;
+  const elements = getCurrentElements();
+  const idx = elements.findIndex(el => el.id === selectedElementId);
+  if (idx >= 0) elements.splice(idx, 1);
+  selectedElementId = null;
+  touch();
+}
+
+function handleKeyDown(e) {
+  const tag = document.activeElement?.tagName;
+  const typing = ['INPUT','TEXTAREA','SELECT'].includes(tag);
+  if (!typing && (e.key === 'Delete' || e.key === 'Backspace')) {
+    if (selectedElementId) { e.preventDefault(); deleteSelectedElement(); }
+  }
+  if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelectedElement(); }
+  if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveCurrentDeck(); }
+  if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  if (!typing && selectedElementId) {
+    const el = getSelectedElement();
+    if (!el || el.locked) return;
+    let moved = false;
+    if (e.key === 'ArrowLeft') { el.x = clamp(el.x - (e.shiftKey ? 10 : 1), 0, getCurrentCard().width - el.width); moved = true; }
+    if (e.key === 'ArrowRight') { el.x = clamp(el.x + (e.shiftKey ? 10 : 1), 0, getCurrentCard().width - el.width); moved = true; }
+    if (e.key === 'ArrowUp') { el.y = clamp(el.y - (e.shiftKey ? 10 : 1), 0, getCurrentCard().height - el.height); moved = true; }
+    if (e.key === 'ArrowDown') { el.y = clamp(el.y + (e.shiftKey ? 10 : 1), 0, getCurrentCard().height - el.height); moved = true; }
+    if (moved) { e.preventDefault(); touch(false); }
+  }
+}
+
+function touch(push = true) {
+  markDirty();
+  renderAll();
+  autoSave();
+  if (push) pushHistory();
+}
+function markDirty(saved = false) {
+  els.saveStatus.textContent = saved ? 'Sauvegardé' : 'Modifications non enregistrées';
+  els.saveStatus.style.color = saved ? 'var(--ok)' : '#ffd479';
+}
+function saveCurrentDeck() {
+  state.updatedAt = new Date().toISOString();
+  const decks = getAllDecks();
+  const index = decks.findIndex(d => d.id === state.id);
+  const clone = structuredClone(state);
+  if (index >= 0) decks[index] = clone; else decks.unshift(clone);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
+  localStorage.setItem(CURRENT_KEY, state.id);
+  markDirty(true);
+  renderSavedDecks();
+}
+function autoSave() { saveCurrentDeck(); }
+function getAllDecks() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; } }
+
+function renderSavedDecks() {
+  const wrap = byId('savedDecks');
+  const decks = getAllDecks();
+  wrap.innerHTML = '';
+  if (!decks.length) {
+    wrap.innerHTML = `<div class="deck-card glass"><h3>Aucun deck</h3><p>Crée ton premier deck ou importe un JSON.</p></div>`;
+    return;
+  }
+  decks.sort((a,b)=> new Date(b.updatedAt) - new Date(a.updatedAt)).forEach(deck => {
+    const card = document.createElement('div');
+    card.className = 'deck-card glass';
+    card.innerHTML = `<h3>${escapeHtml(deck.name || 'Sans nom')}</h3><small>${deck.cards?.length || 0} carte(s) · ${formatDate(deck.updatedAt)}</small>
+      <div class="hero-actions">
+        <button class="btn tiny primary">Ouvrir</button>
+        <button class="btn tiny secondary">Dupliquer</button>
+        <button class="btn tiny danger">Supprimer</button>
+      </div>`;
+    const [openBtn, dupBtn, delBtn] = card.querySelectorAll('button');
+    openBtn.addEventListener('click', () => loadDeck(deck));
+    dupBtn.addEventListener('click', () => duplicateDeck(deck.id));
+    delBtn.addEventListener('click', () => deleteDeck(deck.id));
+    wrap.appendChild(card);
+  });
+}
+
+function loadDeck(deck, silent = false) {
+  state = structuredClone(deck);
+  if (!state.currentCardId && state.cards?.length) state.currentCardId = state.cards[0].id;
+  enterEditor();
+  if (!silent) markDirty(true);
+  pushHistory(true);
+}
+function duplicateDeck(id) {
+  const decks = getAllDecks();
+  const source = decks.find(d => d.id === id);
+  if (!source) return;
+  const copy = structuredClone(source);
+  copy.id = uid();
+  copy.name = (copy.name || 'Deck') + ' copie';
+  copy.updatedAt = new Date().toISOString();
+  copy.cards.forEach(card => {
+    card.id = uid();
+    Object.values(card.sides).forEach(side => side.elements.forEach(el => el.id = uid()));
+  });
+  decks.unshift(copy);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
+  renderSavedDecks();
+}
+function deleteDeck(id) {
+  const decks = getAllDecks().filter(d => d.id !== id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
+  if (localStorage.getItem(CURRENT_KEY) === id) localStorage.removeItem(CURRENT_KEY);
+  renderSavedDecks();
+}
+
+function exportJSON() {
+  downloadBlob(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), `${safeName(state.name)}.json`);
+}
+
+async function exportImage(type = 'png') {
+  const canvas = await html2canvas(els.cardCanvas, { backgroundColor: null, useCORS: true, scale: 2 });
+  canvas.toBlob(blob => downloadBlob(blob, `${safeName(state.name)}-${getCurrentCard().name}-${state.currentSide}.${type === 'png' ? 'png' : 'jpg'}`), `image/${type === 'png' ? 'png' : 'jpeg'}`, 0.95);
+}
+
+async function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [getCurrentCard().width, getCurrentCard().height] });
+  for (let c = 0; c < state.cards.length; c++) {
+    state.currentCardId = state.cards[c].id;
+    for (const side of ['front', 'back']) {
+      state.currentSide = side;
+      selectedElementId = null;
+      renderAll();
+      const canvas = await html2canvas(els.cardCanvas, { backgroundColor: null, useCORS: true, scale: 2 });
+      const img = canvas.toDataURL('image/png');
+      if (!(c === 0 && side === 'front')) pdf.addPage([getCurrentCard().width, getCurrentCard().height], 'portrait');
+      pdf.addImage(img, 'PNG', 0, 0, getCurrentCard().width, getCurrentCard().height);
+    }
+  }
+  pdf.save(`${safeName(state.name)}.pdf`);
+  state.currentCardId = state.cards[0].id;
+  state.currentSide = 'front';
+  renderAll();
+}
+
+function importJSON(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  file.text().then(text => {
+    try {
+      const data = JSON.parse(text);
+      if (!data.cards || !Array.isArray(data.cards)) throw new Error('Format invalide');
+      loadDeck(data);
+    } catch {
+      alert('JSON invalide.');
+    }
+    e.target.value = '';
+  });
+}
+
+function applyTheme(theme) {
+  const side = getCurrentSide();
+  const map = {
+    classic: { color: '#1f120b', opacity: 1, image: null, accents: ['#e6c282','#6b4625'] },
+    neon: { color: '#071326', opacity: 1, image: null, accents: ['#4cc9f0','#d946ef'] },
+    mystic: { color: '#22153e', opacity: 1, image: null, accents: ['#b794f4','#f0abfc'] },
+    ember: { color: '#2f110d', opacity: 1, image: null, accents: ['#fb923c','#facc15'] },
+    ocean: { color: '#0b2942', opacity: 1, image: null, accents: ['#67e8f9','#22c55e'] },
+    minimal: { color: '#f3f5f8', opacity: 1, image: null, accents: ['#d1d5db','#111827'] },
+  };
+  const conf = map[theme];
+  side.background.color = conf.color;
+  if (!side.elements.length) {
+    side.elements.push({ ...baseElement('frame'), color:'transparent', borderColor: conf.accents[0], borderWidth: 10, width: getCurrentCard().width-40, height:getCurrentCard().height-40, x:20, y:20, radius: 24, name: 'Cadre thème' });
+    side.elements.push({ ...baseElement('text'), text: state.name, x: 36, y: 28, width: getCurrentCard().width-72, height: 52, fontSize: 32, fontFamily: theme === 'classic' ? 'Cinzel' : theme === 'neon' ? 'Orbitron' : 'Inter', color: conf.accents[0], textAlign:'center', name:'Titre thème' });
+  }
+  touch();
+}
+
+function pushHistory(reset = false) {
+  const snapshot = JSON.stringify(state);
+  if (reset) {
+    history = [snapshot]; historyIndex = 0; return;
+  }
+  if (history[historyIndex] === snapshot) return;
+  history = history.slice(0, historyIndex + 1);
+  history.push(snapshot);
+  if (history.length > 80) history.shift();
+  historyIndex = history.length - 1;
+}
+function undo() {
+  if (historyIndex <= 0) return;
+  historyIndex -= 1;
+  state = JSON.parse(history[historyIndex]);
+  selectedElementId = null;
+  renderAll();
+}
+function redo() {
+  if (historyIndex >= history.length - 1) return;
+  historyIndex += 1;
+  state = JSON.parse(history[historyIndex]);
+  selectedElementId = null;
+  renderAll();
+}
+
+function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+function snap(n) { return Math.round(n / GRID_SIZE) * GRID_SIZE; }
+function formatDate(iso) { try { return new Date(iso).toLocaleString('fr-FR'); } catch { return ''; } }
+function safeName(name) { return (name || 'deck').replace(/[^a-z0-9-_]+/gi, '_').replace(/^_+|_+$/g, ''); }
+function normalizeHex(hex) {
+  if (!hex || !hex.startsWith('#')) return '#000000';
+  if (hex.length === 4) return '#' + [...hex.slice(1)].map(c => c+c).join('');
+  return hex.slice(0,7);
+}
+function rgbaFromHex(hex, opacity = 1) {
+  hex = normalizeHex(hex);
+  const bigint = parseInt(hex.slice(1), 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
 function downloadBlob(blob, filename) {
-  if (!blob) return;
-  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const url = URL.createObjectURL(blob);
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function escapeHtml(str) {
+  return (str || '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 }
