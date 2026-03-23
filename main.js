@@ -29,6 +29,7 @@ const el = {
   backHomeBtn: document.getElementById('backHomeBtn'),
   saveSetBtn: document.getElementById('saveSetBtn'),
   exportJsonBtn: document.getElementById('exportJsonBtn'),
+  exportPdfBtn: document.getElementById('exportPdfBtn'),
   printBtn: document.getElementById('printBtn'),
   addCardBtn: document.getElementById('addCardBtn'),
   duplicateCardBtn: document.getElementById('duplicateCardBtn'),
@@ -80,6 +81,7 @@ function bindEvents() {
     alert('Set sauvegardé localement.');
   });
   el.exportJsonBtn?.addEventListener('click', exportCurrentSetJson);
+  el.exportPdfBtn?.addEventListener('click', exportCurrentSetPdf);
   el.printBtn?.addEventListener('click', () => window.print());
   el.addCardBtn?.addEventListener('click', addCard);
   el.duplicateCardBtn?.addEventListener('click', duplicateCard);
@@ -126,7 +128,7 @@ function bindEvents() {
   el.exportPngBtn?.addEventListener('click', () => exportVisibleCard('png'));
   el.exportJpegBtn?.addEventListener('click', () => exportVisibleCard('jpeg'));
   el.exportAllPngBtn?.addEventListener('click', exportAllCardsPng);
-  el.importSetBtn?.addEventListener('click', () => el.importSetInput.click());
+  el.importSetBtn?.addEventListener('click', () => el.importSetInput?.click());
   el.importSetInput?.addEventListener('change', importSetFromFile);
 
   document.addEventListener('pointermove', onPointerMove);
@@ -151,9 +153,7 @@ function migrateIfNeeded() {
         saveSets();
         return;
       }
-    } catch {
-      // ignore invalid legacy payload
-    }
+    } catch {}
   }
 
   state.sets = normalizeSets(state.sets);
@@ -207,7 +207,6 @@ function defaultCard(style = 'blank') {
 
 function starterElements(style, side) {
   if (style !== 'pirate') return [];
-
   if (side === 'front') {
     return [
       makeElement('title', { x: 26, y: 18, w: 200, h: 34, text: 'Titre de carte', fontFamily: 'Pirata One', fontSize: 24, color: '#5a381f', backgroundColor: 'transparent', borderWidth: 0, textAlign: 'center' }),
@@ -216,7 +215,6 @@ function starterElements(style, side) {
       makeElement('text', { x: 30, y: 262, w: 192, h: 56, text: 'Ajoutez ici la description pirate ou la capacité spéciale.', fontFamily: 'IM Fell English', fontSize: 16, color: '#4a2f1a', backgroundColor: 'transparent', borderWidth: 0 }),
     ];
   }
-
   return [
     makeElement('title', { x: 26, y: 34, w: 200, h: 34, text: 'Verso', fontFamily: 'Pirata One', fontSize: 26, color: '#5a381f', backgroundColor: 'transparent', borderWidth: 0, textAlign: 'center' }),
     makeElement('text', { x: 40, y: 112, w: 172, h: 120, text: 'Texte de verso, règles, rareté, notes ou effet.', fontFamily: 'Libre Baskerville', fontSize: 15, color: '#4a2f1a', backgroundColor: 'rgba(255,248,234,0.35)', borderColor: '#8f6a42', borderWidth: 1 }),
@@ -292,7 +290,7 @@ function normalizeElement(item) {
     type,
     x: clamp(numberOr(item.x, fallback.x), 0, CARD_W - MIN_SIZE),
     y: clamp(numberOr(item.y, fallback.y), 0, CARD_H - MIN_SIZE),
-    w: Math.max(type === 'line' ? MIN_SIZE : MIN_SIZE, numberOr(item.w, fallback.w)),
+    w: Math.max(MIN_SIZE, numberOr(item.w, fallback.w)),
     h: Math.max(type === 'line' ? LINE_MIN_H : MIN_SIZE, numberOr(item.h, fallback.h)),
     fontSize: Math.max(8, numberOr(item.fontSize, fallback.fontSize)),
     borderWidth: Math.max(0, numberOr(item.borderWidth, fallback.borderWidth)),
@@ -305,28 +303,23 @@ function normalizeElement(item) {
 function createNewSet(style) {
   const set = defaultSet(style);
   state.sets.unshift(set);
-  openSet(set.id);
   saveSets();
+  openSet(set.id);
 }
 
 function showScreen(name) {
   state.screen = name;
   el.homeScreen?.classList.toggle('active', name === 'home');
   el.editorScreen?.classList.toggle('active', name === 'editor');
-
-  if (name === 'home') {
-    renderHome();
-  } else {
-    renderEditor();
-  }
+  if (name === 'home') renderHome(); else renderEditor();
 }
 
 function renderHome() {
   state.screen = 'home';
   el.homeScreen?.classList.add('active');
   el.editorScreen?.classList.remove('active');
-
   if (!el.savedSetsList) return;
+
   const sets = normalizeSets(state.sets);
   state.sets = sets;
 
@@ -336,13 +329,15 @@ function renderHome() {
   }
 
   el.savedSetsList.innerHTML = sets.map(set => `
-    <article class="saved-set-card">
-      <div>
-        <h3>${escapeHtml(set.name)}</h3>
-        <p>Style : ${set.style === 'pirate' ? 'Pirate' : 'Vierge'} · ${set.cards.length} carte(s)</p>
-        <p>Mis à jour : ${escapeHtml(formatDate(set.updatedAt))}</p>
+    <article class="saved-card">
+      <div class="saved-card-head">
+        <div>
+          <h3>${escapeHtml(set.name)}</h3>
+          <div class="saved-meta">Style : ${set.style === 'pirate' ? 'Pirate' : 'Vierge'} · ${set.cards.length} carte(s)</div>
+          <div class="saved-meta">Mis à jour : ${escapeHtml(formatDate(set.updatedAt))}</div>
+        </div>
       </div>
-      <div class="stack-actions compact">
+      <div class="saved-actions">
         <button class="primary small" data-open-set="${set.id}">Ouvrir</button>
         <button class="ghost small" data-export-set="${set.id}">JSON</button>
         <button class="ghost small" data-copy-set="${set.id}">Dupliquer</button>
@@ -360,11 +355,9 @@ function renderHome() {
 function renderEditor() {
   const set = currentSet();
   if (!set) return showScreen('home');
-
   el.homeScreen?.classList.remove('active');
   el.editorScreen?.classList.add('active');
   state.screen = 'editor';
-
   renderEditorMeta();
   renderCards();
   syncPropertiesPanel();
@@ -457,7 +450,7 @@ function renderElement(item, cardIndex) {
   if (item.type === 'image') {
     inner = item.src
       ? `<img src="${escapeHtml(item.src)}" alt="Image" draggable="false" />`
-      : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-family:Inter, sans-serif;font-size:14px;color:#6b7280;background:#f6f1e5">${escapeHtml(item.placeholder || 'Image')}</div>`;
+      : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;font-size:14px;color:#6b7280;background:#f6f1e5">${escapeHtml(item.placeholder || 'Image')}</div>`;
   } else if (item.type === 'line') {
     inner = `<div class="line-bar" style="height:${Math.max(1, borderWidth || 4)}px;background:${item.color || '#1f2937'}"></div>`;
   } else {
@@ -469,12 +462,7 @@ function renderElement(item, cardIndex) {
     : '';
 
   return `
-    <div
-      class="element ${item.type} ${selected ? 'selected' : ''}"
-      data-card-index="${cardIndex}"
-      data-element-id="${item.id}"
-      style="${commonStyle}"
-    >
+    <div class="element ${item.type} ${selected ? 'selected' : ''}" data-card-index="${cardIndex}" data-element-id="${item.id}" style="${commonStyle}">
       <div class="content" style="${contentStyle}">${inner}</div>
       ${handles}
     </div>
@@ -483,56 +471,35 @@ function renderElement(item, cardIndex) {
 
 function styleForType(item) {
   switch (item.type) {
-    case 'badge':
-      return 'border-radius:999px;display:flex;align-items:center;justify-content:center;padding:6px 12px;';
+    case 'badge': return 'border-radius:999px;display:flex;align-items:center;justify-content:center;padding:6px 12px;';
     case 'rect':
-    case 'square':
-      return 'border-radius:0;';
+    case 'square': return 'border-radius:0;';
     case 'circle':
-    case 'ellipse':
-      return 'border-radius:999px;';
-    case 'banner':
-      return 'display:flex;align-items:center;justify-content:center;padding:6px 10px;';
-    case 'title':
-      return 'padding:4px 6px;font-weight:700;';
-    case 'text':
-      return 'padding:6px;';
-    case 'image':
-      return 'padding:0;';
-    default:
-      return '';
+    case 'ellipse': return 'border-radius:999px;';
+    case 'banner': return 'display:flex;align-items:center;justify-content:center;padding:6px 10px;';
+    case 'title': return 'padding:4px 6px;font-weight:700;';
+    case 'text': return 'padding:6px;';
+    case 'image': return 'padding:0;';
+    default: return '';
   }
 }
 
 function bindCardDomEvents() {
-  document.querySelectorAll('.card-canvas').forEach(canvas => {
-    canvas.addEventListener('pointerdown', onCanvasPointerDown);
-  });
-
-  document.querySelectorAll('.element').forEach(node => {
-    node.addEventListener('pointerdown', onElementPointerDown);
-  });
-
-  document.querySelectorAll('.resize-handle').forEach(node => {
-    node.addEventListener('pointerdown', onResizeHandlePointerDown);
-  });
+  document.querySelectorAll('.card-canvas').forEach(canvas => canvas.addEventListener('pointerdown', onCanvasPointerDown));
+  document.querySelectorAll('.element').forEach(node => node.addEventListener('pointerdown', onElementPointerDown));
+  document.querySelectorAll('.resize-handle').forEach(node => node.addEventListener('pointerdown', onResizeHandlePointerDown));
 }
 
 function onCanvasPointerDown(e) {
   const canvas = e.currentTarget;
-  const cardIndex = Number(canvas.dataset.canvasCardIndex);
-  state.selectedCardIndex = cardIndex;
-
+  state.selectedCardIndex = Number(canvas.dataset.canvasCardIndex);
   if (e.target.closest('.element')) return;
-
   state.selectedElementId = null;
   renderEditor();
 }
 
 function onElementPointerDown(e) {
-  const handle = e.target.closest('.resize-handle');
-  if (handle) return;
-
+  if (e.target.closest('.resize-handle')) return;
   const node = e.currentTarget;
   const cardIndex = Number(node.dataset.cardIndex);
   const elementId = node.dataset.elementId;
@@ -541,7 +508,8 @@ function onElementPointerDown(e) {
   state.selectedCardIndex = cardIndex;
   if (!item) {
     state.selectedElementId = null;
-    return renderEditor();
+    renderEditor();
+    return;
   }
 
   state.selectedElementId = elementId;
@@ -603,9 +571,7 @@ function onPointerMove(e) {
     item.y = clamp(drag.start.y + dy, 0, CARD_H - item.h);
   }
 
-  if (drag.mode === 'resize') {
-    resizeItem(item, drag.start, drag.dir, dx, dy);
-  }
+  if (drag.mode === 'resize') resizeItem(item, drag.start, drag.dir, dx, dy);
 
   renderCards();
   syncPropertiesPanel();
@@ -619,28 +585,15 @@ function resizeItem(item, start, dir, dx, dy) {
 
   if (dir.includes('e')) w = start.w + dx;
   if (dir.includes('s')) h = start.h + dy;
-  if (dir.includes('w')) {
-    w = start.w - dx;
-    x = start.x + dx;
-  }
-  if (dir.includes('n')) {
-    h = start.h - dy;
-    y = start.y + dy;
-  }
+  if (dir.includes('w')) { w = start.w - dx; x = start.x + dx; }
+  if (dir.includes('n')) { h = start.h - dy; y = start.y + dy; }
 
   const minH = item.type === 'line' ? LINE_MIN_H : MIN_SIZE;
   w = Math.max(MIN_SIZE, w);
   h = Math.max(minH, h);
 
-  if (x < 0) {
-    w += x;
-    x = 0;
-  }
-  if (y < 0) {
-    h += y;
-    y = 0;
-  }
-
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
   if (x + w > CARD_W) w = CARD_W - x;
   if (y + h > CARD_H) h = CARD_H - y;
 
@@ -671,25 +624,13 @@ function onGlobalKeyDown(e) {
   const item = getElementById(state.selectedElementId);
   if (!item) return;
 
-  let moved = false;
   const step = e.shiftKey ? 10 : 1;
+  let moved = false;
   switch (e.key) {
-    case 'ArrowLeft':
-      item.x = clamp(item.x - step, 0, CARD_W - item.w);
-      moved = true;
-      break;
-    case 'ArrowRight':
-      item.x = clamp(item.x + step, 0, CARD_W - item.w);
-      moved = true;
-      break;
-    case 'ArrowUp':
-      item.y = clamp(item.y - step, 0, CARD_H - item.h);
-      moved = true;
-      break;
-    case 'ArrowDown':
-      item.y = clamp(item.y + step, 0, CARD_H - item.h);
-      moved = true;
-      break;
+    case 'ArrowLeft': item.x = clamp(item.x - step, 0, CARD_W - item.w); moved = true; break;
+    case 'ArrowRight': item.x = clamp(item.x + step, 0, CARD_W - item.w); moved = true; break;
+    case 'ArrowUp': item.y = clamp(item.y - step, 0, CARD_H - item.h); moved = true; break;
+    case 'ArrowDown': item.y = clamp(item.y + step, 0, CARD_H - item.h); moved = true; break;
   }
 
   if (moved) {
@@ -705,18 +646,15 @@ function currentSet() {
 }
 
 function currentCard() {
-  const set = currentSet();
-  return set?.cards?.[state.selectedCardIndex] || null;
+  return currentSet()?.cards?.[state.selectedCardIndex] || null;
 }
 
 function currentElements() {
-  const card = currentCard();
-  return card?.[state.side] || null;
+  return currentCard()?.[state.side] || null;
 }
 
 function getElementById(id, cardIndex = state.selectedCardIndex) {
-  const set = currentSet();
-  const card = set?.cards?.[cardIndex];
+  const card = currentSet()?.cards?.[cardIndex];
   return card?.[state.side]?.find(item => item.id === id) || null;
 }
 
@@ -747,8 +685,7 @@ function duplicateSet(setId) {
 function deleteSet(setId) {
   const set = state.sets.find(item => item.id === setId);
   if (!set) return;
-  const ok = window.confirm(`Supprimer le set "${set.name}" ?`);
-  if (!ok) return;
+  if (!window.confirm(`Supprimer le set "${set.name}" ?`)) return;
   state.sets = state.sets.filter(item => item.id !== setId);
   if (state.currentSetId === setId) {
     state.currentSetId = null;
@@ -775,12 +712,10 @@ function duplicateCard() {
   const set = currentSet();
   const card = currentCard();
   if (!set || !card) return;
-
   const copy = normalizeCard(JSON.parse(JSON.stringify(card)));
   copy.id = uid('card');
-  copy.front.forEach(item => item.id = uid('el'));
-  copy.back.forEach(item => item.id = uid('el'));
-
+  copy.front.forEach(item => { item.id = uid('el'); });
+  copy.back.forEach(item => { item.id = uid('el'); });
   set.cards.splice(state.selectedCardIndex + 1, 0, copy);
   state.selectedCardIndex += 1;
   state.selectedElementId = null;
@@ -817,7 +752,7 @@ function applyStyleToAllCards() {
     if (idx === state.selectedCardIndex) return;
     if (!target[state.side]?.length) {
       target[state.side] = JSON.parse(JSON.stringify(card[state.side] || []));
-      target[state.side].forEach(item => item.id = uid('el'));
+      target[state.side].forEach(item => { item.id = uid('el'); });
     }
   });
 
@@ -840,11 +775,7 @@ function addElement(type) {
   next.y = clamp(46 + (elements.length % 5) * 14, 0, CARD_H - next.h);
   next.z = maxZ(elements) + 1;
 
-  if (type === 'square') {
-    next.w = 80;
-    next.h = 80;
-  }
-  if (type === 'circle') {
+  if (type === 'square' || type === 'circle') {
     next.w = 80;
     next.h = 80;
   }
@@ -886,14 +817,13 @@ function handleImageSelected(e) {
     state.selectedElementId = imageEl.id;
     touchSet(currentSet());
     renderEditor();
-    el.imageInput.value = '';
+    if (el.imageInput) el.imageInput.value = '';
   };
   reader.readAsDataURL(file);
 }
 
 function syncPropertiesPanel() {
   const item = getElementById(state.selectedElementId);
-
   if (!item) {
     if (el.selectionInfo) el.selectionInfo.textContent = 'Aucun élément sélectionné.';
     if (el.propText) el.propText.value = '';
@@ -906,17 +836,17 @@ function syncPropertiesPanel() {
     ? ` · Bord ${Math.round(item.borderWidth || 0)} px`
     : '';
 
-  el.selectionInfo.textContent = `Élément : ${labelForType(item.type)} · Position ${Math.round(item.x)}, ${Math.round(item.y)} · Taille ${Math.round(item.w)} × ${Math.round(item.h)}${borderHint}`;
-  el.propText.value = item.text || '';
-  el.propFont.value = item.fontFamily || 'Inter';
-  el.propFontSize.value = String(item.fontSize || 16);
-  el.propColor.value = normalizeColor(item.color, '#1f2937');
-  el.propBgColor.value = normalizeColor(item.backgroundColor, '#d6b66f');
-  el.propBorderColor.value = normalizeColor(item.borderColor, '#5b4630');
-  el.propBorderWidth.value = String(item.borderWidth || 0);
-  el.propOpacity.value = String(Math.round((item.opacity ?? 1) * 100));
-  el.propRotation.value = String(item.rotation || 0);
-  el.propAlign.value = item.textAlign || 'left';
+  if (el.selectionInfo) el.selectionInfo.textContent = `Élément : ${labelForType(item.type)} · Position ${Math.round(item.x)}, ${Math.round(item.y)} · Taille ${Math.round(item.w)} × ${Math.round(item.h)}${borderHint}`;
+  if (el.propText) el.propText.value = item.text || '';
+  if (el.propFont) el.propFont.value = item.fontFamily || 'Inter';
+  if (el.propFontSize) el.propFontSize.value = String(item.fontSize || 16);
+  if (el.propColor) el.propColor.value = normalizeColor(item.color, '#1f2937');
+  if (el.propBgColor) el.propBgColor.value = normalizeColor(item.backgroundColor, '#d6b66f');
+  if (el.propBorderColor) el.propBorderColor.value = normalizeColor(item.borderColor, '#5b4630');
+  if (el.propBorderWidth) el.propBorderWidth.value = String(item.borderWidth || 0);
+  if (el.propOpacity) el.propOpacity.value = String(Math.round((item.opacity ?? 1) * 100));
+  if (el.propRotation) el.propRotation.value = String(item.rotation || 0);
+  if (el.propAlign) el.propAlign.value = item.textAlign || 'left';
 }
 
 function updateSelectedElement(key, value) {
@@ -924,19 +854,10 @@ function updateSelectedElement(key, value) {
   if (!item) return;
 
   item[key] = value;
-
-  if (key === 'borderWidth') {
-    item.borderWidth = Math.max(0, numberOr(value, item.borderWidth));
-  }
-  if (key === 'fontSize') {
-    item.fontSize = Math.max(8, numberOr(value, item.fontSize));
-  }
-  if (key === 'opacity') {
-    item.opacity = clamp(numberOr(value, item.opacity), 0.05, 1);
-  }
-  if (key === 'rotation') {
-    item.rotation = numberOr(value, item.rotation);
-  }
+  if (key === 'borderWidth') item.borderWidth = Math.max(0, numberOr(value, item.borderWidth));
+  if (key === 'fontSize') item.fontSize = Math.max(8, numberOr(value, item.fontSize));
+  if (key === 'opacity') item.opacity = clamp(numberOr(value, item.opacity), 0.05, 1);
+  if (key === 'rotation') item.rotation = numberOr(value, item.rotation);
 
   touchSet(currentSet(), false);
   renderCards();
@@ -962,10 +883,8 @@ function cloneSelectedElement() {
 function removeSelectedElement() {
   const elements = currentElements();
   if (!elements || !state.selectedElementId) return;
-
   const index = elements.findIndex(item => item.id === state.selectedElementId);
   if (index === -1) return;
-
   elements.splice(index, 1);
   normalizeZ(elements);
   state.selectedElementId = null;
@@ -979,12 +898,7 @@ function changeLayer(direction) {
   if (!item || !elements || elements.length < 2) return;
 
   normalizeZ(elements);
-  if (direction > 0) {
-    item.z = maxZ(elements) + 1;
-  } else {
-    item.z = 0;
-  }
-
+  item.z = direction > 0 ? maxZ(elements) + 1 : 0;
   normalizeZ(elements);
   touchSet(currentSet(), false);
   renderCards();
@@ -1017,7 +931,8 @@ function saveCurrentSet() {
 function exportSetJsonById(setId) {
   const set = state.sets.find(item => item.id === setId);
   if (!set) return;
-  downloadBlob(new Blob([JSON.stringify(set, null, 2)], { type: 'application/json' }), `${safeName(set.name)}.json`);
+  const payload = { app: 'Card Set Studio', version: 4, exportedAt: new Date().toISOString(), set };
+  downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), `${safeName(set.name)}.json`);
 }
 
 function exportCurrentSetJson() {
@@ -1032,7 +947,11 @@ async function exportVisibleCard(format = 'png') {
   renderCards();
 
   const targetNode = document.querySelector(`.card-canvas[data-canvas-card-index="${state.selectedCardIndex}"]`);
-  if (!targetNode) return;
+  if (!targetNode) {
+    state.selectedElementId = oldSelected;
+    renderCards();
+    return;
+  }
 
   const canvas = await html2canvas(targetNode, { backgroundColor: null, scale: 3, useCORS: true });
   const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png';
@@ -1048,7 +967,6 @@ async function exportVisibleCard(format = 'png') {
 async function exportAllCardsPng() {
   const set = currentSet();
   if (!set) return;
-
   const prevCard = state.selectedCardIndex;
   const prevSel = state.selectedElementId;
   state.selectedElementId = null;
@@ -1072,10 +990,60 @@ async function exportAllCardsPng() {
   renderEditor();
 }
 
+async function exportCurrentSetPdf() {
+  const set = currentSet();
+  if (!set || !window.jspdf?.jsPDF) {
+    alert('Export PDF indisponible.');
+    return;
+  }
+
+  const previousCardIndex = state.selectedCardIndex;
+  const previousSelectedElement = state.selectedElementId;
+  state.selectedElementId = null;
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const cardWidthMm = 63;
+  const cardHeightMm = 88;
+  const marginX = 10;
+  const marginY = 10;
+  const gapX = 5;
+  const gapY = 5;
+  const pageWidth = 210;
+  const pageHeight = 297;
+  const cols = Math.floor((pageWidth - marginX * 2 + gapX) / (cardWidthMm + gapX));
+  const rows = Math.floor((pageHeight - marginY * 2 + gapY) / (cardHeightMm + gapY));
+  const cardsPerPage = Math.max(1, cols * rows);
+
+  for (let i = 0; i < set.cards.length; i += 1) {
+    state.selectedCardIndex = i;
+    renderCards();
+    const targetNode = document.querySelector(`.card-canvas[data-canvas-card-index="${i}"]`);
+    if (!targetNode) continue;
+
+    const canvas = await html2canvas(targetNode, { backgroundColor: '#ffffff', scale: 3, useCORS: true });
+    const imgData = canvas.toDataURL('image/png');
+
+    if (i > 0 && i % cardsPerPage === 0) pdf.addPage();
+
+    const indexOnPage = i % cardsPerPage;
+    const col = indexOnPage % cols;
+    const row = Math.floor(indexOnPage / cols);
+    const x = marginX + col * (cardWidthMm + gapX);
+    const y = marginY + row * (cardHeightMm + gapY);
+
+    pdf.addImage(imgData, 'PNG', x, y, cardWidthMm, cardHeightMm);
+  }
+
+  state.selectedCardIndex = previousCardIndex;
+  state.selectedElementId = previousSelectedElement;
+  renderEditor();
+  pdf.save(`${safeName(set.name)}-${state.side}.pdf`);
+}
+
 async function importSetFromFile(e) {
   const file = e.target.files?.[0];
   if (!file) return;
-
   try {
     const text = await file.text();
     const data = JSON.parse(text);
@@ -1084,14 +1052,13 @@ async function importSetFromFile(e) {
     imported.name = imported.name ? `${imported.name} (importé)` : 'Set importé';
     imported.createdAt = new Date().toISOString();
     imported.updatedAt = new Date().toISOString();
-
     state.sets.unshift(imported);
     saveSets();
     openSet(imported.id);
   } catch {
     alert('Import impossible : fichier JSON invalide.');
   } finally {
-    e.target.value = '';
+    if (e.target) e.target.value = '';
   }
 }
 
@@ -1101,25 +1068,13 @@ function scrollToCard(index) {
 
 function labelForType(type) {
   return ({
-    title: 'Titre',
-    text: 'Texte',
-    image: 'Image',
-    badge: 'Badge',
-    rect: 'Rectangle',
-    square: 'Carré',
-    circle: 'Cercle',
-    ellipse: 'Ellipse',
-    line: 'Ligne',
-    banner: 'Bannière',
+    title: 'Titre', text: 'Texte', image: 'Image', badge: 'Badge', rect: 'Rectangle',
+    square: 'Carré', circle: 'Cercle', ellipse: 'Ellipse', line: 'Ligne', banner: 'Bannière',
   }[type]) || type;
 }
 
 function formatDate(iso) {
-  try {
-    return new Date(iso).toLocaleString('fr-FR');
-  } catch {
-    return iso;
-  }
+  try { return new Date(iso).toLocaleString('fr-FR'); } catch { return iso; }
 }
 
 function safeName(value) {
