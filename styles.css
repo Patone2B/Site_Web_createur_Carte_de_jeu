@@ -105,3 +105,17 @@ input[type="range"] { width:100%; }
   .topbar { flex-direction: column; align-items: stretch; }
   .card-canvas { width: 320px; height: 460px; }
 }
+
+.save-toggle-row { padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,0.05); }
+.full-width { width: 100%; }
+.compact { margin: 8px 0 0; line-height: 1.45; }
+.export-host { position: fixed; left: -10000px; top: 0; padding: 0; margin: 0; background: transparent; pointer-events: none; z-index: -1; }
+.export-snapshot { box-shadow: none !important; }
+.is-exporting .card-canvas::after,
+.is-exporting .canvas-element.selected,
+.is-exporting .canvas-element.locked::after,
+.is-exporting .resize-handle { display: none !important; }
+.is-exporting .canvas-element { outline: none !important; }
+@media print {
+  .export-host { position: static; left: 0; }
+}
