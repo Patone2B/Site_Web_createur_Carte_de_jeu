@@ -1,23 +1,30 @@
+
 const STORAGE_KEY = 'deckStudioLocal.v1';
 const CURRENT_KEY = 'deckStudioCurrentDeckId';
+const DB_NAME = 'deckStudioLocalDB';
+const DB_VERSION = 1;
+const STORE_DECKS = 'decks';
+const META_MIGRATED_KEY = 'deckStudioMigratedToIndexedDB';
 const GRID_SIZE = 10;
 let state = createEmptyState();
 let selectedElementId = null;
 let history = [];
 let historyIndex = -1;
 let dragState = null;
+let dbPromise = null;
 
 const els = {};
 
 document.addEventListener('DOMContentLoaded', init);
 
-function init() {
+async function init() {
   bindElements();
   bindEvents();
-  renderSavedDecks();
+  await migrateLegacyStorage();
+  await renderSavedDecks();
   const currentId = localStorage.getItem(CURRENT_KEY);
   if (currentId) {
-    const deck = getAllDecks().find(d => d.id === currentId);
+    const deck = await getDeckById(currentId);
     if (deck) loadDeck(deck, true);
   }
 }
@@ -28,17 +35,17 @@ function bindElements() {
     'cardWidthInput','cardHeightInput','cardBgInput','cardBgOpacityInput','cardBackgroundImageInput','selectionControls','selectionEmpty',
     'elementNameInput','elementXInput','elementYInput','elementWidthInput','elementHeightInput','elementRotationInput','elementOpacityInput',
     'elementColorInput','elementBorderColorInput','elementBorderWidthInput','elementRadiusInput','elementFontSizeInput','elementFontFamilyInput',
-    'elementTextInput'
+    'elementTextInput','persistDeckToggle','persistDeckToggleMirror'
   ].forEach(id => els[id] = document.getElementById(id));
 }
 
 function bindEvents() {
   byId('createDeckBtn').addEventListener('click', () => { state = createEmptyState(); enterEditor(); pushHistory(); });
-  byId('refreshDecksBtn').addEventListener('click', renderSavedDecks);
+  byId('refreshDecksBtn').addEventListener('click', () => renderSavedDecks());
   byId('aboutBtn').addEventListener('click', () => toggleModal(true));
   byId('closeAboutBtn').addEventListener('click', () => toggleModal(false));
   byId('backToHomeBtn').addEventListener('click', () => showScreen('start'));
-  byId('saveDeckBtn').addEventListener('click', saveCurrentDeck);
+  byId('saveDeckBtn').addEventListener('click', () => saveCurrentDeck({ notify: true }));
   byId('deckNameInput').addEventListener('input', e => { state.name = e.target.value || 'Mon deck'; markDirty(); renderCardsList(); });
   byId('addCardBtn').addEventListener('click', addCard);
   byId('duplicateCardBtn').addEventListener('click', duplicateCurrentCard);
@@ -64,6 +71,8 @@ function bindEvents() {
   byId('snapToggle').addEventListener('change', () => {});
   byId('showGridToggle').addEventListener('change', e => els.canvasWrap.classList.toggle('show-grid', e.target.checked));
   byId('safeZoneToggle').addEventListener('change', e => els.canvasWrap.classList.toggle('show-safe-zone', e.target.checked));
+  byId('persistDeckToggle').addEventListener('change', onPersistToggleChange);
+  byId('persistDeckToggleMirror').addEventListener('change', onPersistToggleChange);
 
   document.querySelectorAll('[data-add]').forEach(btn => btn.addEventListener('click', () => addElement(btn.dataset.add)));
   document.querySelectorAll('.template-btn').forEach(btn => btn.addEventListener('click', () => applyTheme(btn.dataset.theme)));
@@ -98,6 +107,7 @@ function createEmptyState() {
     currentCardId: null,
     currentSide: 'front',
     updatedAt: new Date().toISOString(),
+    persistLocal: true,
     cards: [createCard(1)]
   };
 }
@@ -131,6 +141,7 @@ function toggleModal(show) { els.aboutModal.classList.toggle('hidden', !show); }
 
 function enterEditor() {
   if (!state.currentCardId) state.currentCardId = state.cards[0].id;
+  if (typeof state.persistLocal !== 'boolean') state.persistLocal = true;
   showScreen('editor');
   selectedElementId = null;
   renderAll();
@@ -149,6 +160,7 @@ function renderAll() {
   renderSelectionPanel();
   renderCardControls();
   updateSideButtons();
+  syncPersistToggles();
 }
 
 function renderCardsList() {
@@ -177,7 +189,7 @@ function renderCanvas() {
   canvas.style.backgroundPosition = 'center';
 
   side.elements.forEach((el, index) => {
-    const node = document.createElement(el.type === 'text' ? 'div' : 'div');
+    const node = document.createElement('div');
     node.className = `canvas-element ${el.type === 'text' ? 'text-el' : ''} ${shapeClass(el)} ${selectedElementId === el.id ? 'selected' : ''} ${el.locked ? 'locked' : ''}`;
     node.dataset.id = el.id;
     node.style.left = el.x + 'px';
@@ -189,6 +201,7 @@ function renderCanvas() {
     node.style.zIndex = el.zIndex ?? index + 1;
     node.style.borderRadius = (el.radius ?? 0) + 'px';
     node.style.border = `${el.borderWidth || 0}px solid ${el.borderColor || 'transparent'}`;
+    node.style.boxSizing = 'border-box';
 
     if (el.type === 'text') {
       node.textContent = el.text || 'Texte';
@@ -200,6 +213,7 @@ function renderCanvas() {
       node.style.textAlign = el.textAlign || 'left';
       node.style.alignItems = 'center';
       node.style.justifyContent = el.textAlign === 'center' ? 'center' : el.textAlign === 'right' ? 'flex-end' : 'flex-start';
+      node.style.lineHeight = '1.15';
       node.style.background = rgbaFromHex(el.backgroundColor || '#000000', el.backgroundOpacity ?? 0);
     } else if (el.type === 'image') {
       const img = document.createElement('img');
@@ -288,6 +302,27 @@ function renderSelectionPanel() {
 function updateSideButtons() {
   byId('frontBtn').className = `btn tiny ${state.currentSide === 'front' ? 'primary' : 'ghost'}`;
   byId('backBtn').className = `btn tiny ${state.currentSide === 'back' ? 'primary' : 'ghost'}`;
+}
+
+function syncPersistToggles() {
+  const value = state.persistLocal !== false;
+  els.persistDeckToggle.checked = value;
+  els.persistDeckToggleMirror.checked = value;
+}
+
+function onPersistToggleChange(e) {
+  const checked = !!e.target.checked;
+  state.persistLocal = checked;
+  syncPersistToggles();
+  markDirty();
+  if (!checked) {
+    deleteDeck(state.id, { silent: true });
+    localStorage.removeItem(CURRENT_KEY);
+    els.saveStatus.textContent = 'Sauvegarde navigateur désactivée';
+    els.saveStatus.style.color = '#ffb86b';
+  } else {
+    autoSave();
+  }
 }
 
 function addCard() {
@@ -406,8 +441,7 @@ function onElementPointerDown(e) {
   renderLayers();
   renderCanvas();
   if (element.locked) return;
-  const rect = els.cardCanvas.getBoundingClientRect();
-  dragState = { type: 'move', id, startX: e.clientX, startY: e.clientY, originX: element.x, originY: element.y, rect };
+  dragState = { type: 'move', id, startX: e.clientX, startY: e.clientY, originX: element.x, originY: element.y };
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp, { once: true });
 }
@@ -448,6 +482,7 @@ function onPointerUp() {
   window.removeEventListener('pointermove', onPointerMove);
   dragState = null;
   markDirty();
+  autoSave();
   pushHistory();
 }
 
@@ -545,7 +580,7 @@ function handleKeyDown(e) {
     if (selectedElementId) { e.preventDefault(); deleteSelectedElement(); }
   }
   if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateSelectedElement(); }
-  if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveCurrentDeck(); }
+  if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveCurrentDeck({ notify: true }); }
   if (!typing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   if (!typing && selectedElementId) {
     const el = getSelectedElement();
@@ -555,7 +590,7 @@ function handleKeyDown(e) {
     if (e.key === 'ArrowRight') { el.x = clamp(el.x + (e.shiftKey ? 10 : 1), 0, getCurrentCard().width - el.width); moved = true; }
     if (e.key === 'ArrowUp') { el.y = clamp(el.y - (e.shiftKey ? 10 : 1), 0, getCurrentCard().height - el.height); moved = true; }
     if (e.key === 'ArrowDown') { el.y = clamp(el.y + (e.shiftKey ? 10 : 1), 0, getCurrentCard().height - el.height); moved = true; }
-    if (moved) { e.preventDefault(); touch(false); }
+    if (moved) { e.preventDefault(); markDirty(); renderAll(); autoSave(); }
   }
 }
 
@@ -565,33 +600,58 @@ function touch(push = true) {
   autoSave();
   if (push) pushHistory();
 }
-function markDirty(saved = false) {
-  els.saveStatus.textContent = saved ? 'Sauvegardé' : 'Modifications non enregistrées';
+function markDirty(saved = false, message) {
+  els.saveStatus.textContent = message || (saved ? 'Sauvegardé' : 'Modifications non enregistrées');
   els.saveStatus.style.color = saved ? 'var(--ok)' : '#ffd479';
 }
-function saveCurrentDeck() {
+async function saveCurrentDeck({ notify = false } = {}) {
   state.updatedAt = new Date().toISOString();
-  const decks = getAllDecks();
-  const index = decks.findIndex(d => d.id === state.id);
   const clone = structuredClone(state);
-  if (index >= 0) decks[index] = clone; else decks.unshift(clone);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
-  localStorage.setItem(CURRENT_KEY, state.id);
-  markDirty(true);
-  renderSavedDecks();
+  try {
+    if (clone.persistLocal === false) {
+      await dbDeleteDeck(clone.id);
+      localStorage.removeItem(CURRENT_KEY);
+      if (notify) {
+        els.saveStatus.textContent = 'Deck non conservé dans le navigateur';
+        els.saveStatus.style.color = '#ffb86b';
+      }
+      await renderSavedDecks();
+      return true;
+    }
+    await dbPutDeck(clone);
+    localStorage.setItem(CURRENT_KEY, state.id);
+    if (notify) markDirty(true);
+    else {
+      els.saveStatus.textContent = 'Sauvegarde auto';
+      els.saveStatus.style.color = 'var(--ok)';
+    }
+    await renderSavedDecks();
+    return true;
+  } catch (error) {
+    console.error(error);
+    els.saveStatus.textContent = 'Échec de sauvegarde';
+    els.saveStatus.style.color = 'var(--danger)';
+    if (notify) alert('La sauvegarde navigateur a échoué. Le JSON reste disponible pour exporter le deck.');
+    return false;
+  }
 }
-function autoSave() { saveCurrentDeck(); }
-function getAllDecks() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; } }
+function autoSave() {
+  saveCurrentDeck({ notify: false });
+}
+async function getAllDecks() {
+  const decks = await dbGetAllDecks();
+  return decks.sort((a,b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+}
 
-function renderSavedDecks() {
+async function renderSavedDecks() {
   const wrap = byId('savedDecks');
-  const decks = getAllDecks();
+  const decks = await getAllDecks();
   wrap.innerHTML = '';
   if (!decks.length) {
     wrap.innerHTML = `<div class="deck-card glass"><h3>Aucun deck</h3><p>Crée ton premier deck ou importe un JSON.</p></div>`;
     return;
   }
-  decks.sort((a,b)=> new Date(b.updatedAt) - new Date(a.updatedAt)).forEach(deck => {
+  decks.forEach(deck => {
     const card = document.createElement('div');
     card.className = 'deck-card glass';
     card.innerHTML = `<h3>${escapeHtml(deck.name || 'Sans nom')}</h3><small>${deck.cards?.length || 0} carte(s) · ${formatDate(deck.updatedAt)}</small>
@@ -601,7 +661,10 @@ function renderSavedDecks() {
         <button class="btn tiny danger">Supprimer</button>
       </div>`;
     const [openBtn, dupBtn, delBtn] = card.querySelectorAll('button');
-    openBtn.addEventListener('click', () => loadDeck(deck));
+    openBtn.addEventListener('click', async () => {
+      const fresh = await getDeckById(deck.id);
+      if (fresh) loadDeck(fresh);
+    });
     dupBtn.addEventListener('click', () => duplicateDeck(deck.id));
     delBtn.addEventListener('click', () => deleteDeck(deck.id));
     wrap.appendChild(card);
@@ -610,32 +673,31 @@ function renderSavedDecks() {
 
 function loadDeck(deck, silent = false) {
   state = structuredClone(deck);
+  if (typeof state.persistLocal !== 'boolean') state.persistLocal = true;
   if (!state.currentCardId && state.cards?.length) state.currentCardId = state.cards[0].id;
   enterEditor();
   if (!silent) markDirty(true);
   pushHistory(true);
 }
-function duplicateDeck(id) {
-  const decks = getAllDecks();
-  const source = decks.find(d => d.id === id);
+async function duplicateDeck(id) {
+  const source = await getDeckById(id);
   if (!source) return;
   const copy = structuredClone(source);
   copy.id = uid();
   copy.name = (copy.name || 'Deck') + ' copie';
   copy.updatedAt = new Date().toISOString();
+  copy.persistLocal = true;
   copy.cards.forEach(card => {
     card.id = uid();
     Object.values(card.sides).forEach(side => side.elements.forEach(el => el.id = uid()));
   });
-  decks.unshift(copy);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
-  renderSavedDecks();
+  await dbPutDeck(copy);
+  await renderSavedDecks();
 }
-function deleteDeck(id) {
-  const decks = getAllDecks().filter(d => d.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(decks));
+async function deleteDeck(id, { silent = false } = {}) {
+  await dbDeleteDeck(id);
   if (localStorage.getItem(CURRENT_KEY) === id) localStorage.removeItem(CURRENT_KEY);
-  renderSavedDecks();
+  if (!silent) renderSavedDecks();
 }
 
 function exportJSON() {
@@ -643,29 +705,97 @@ function exportJSON() {
 }
 
 async function exportImage(type = 'png') {
-  const canvas = await html2canvas(els.cardCanvas, { backgroundColor: null, useCORS: true, scale: 2 });
-  canvas.toBlob(blob => downloadBlob(blob, `${safeName(state.name)}-${getCurrentCard().name}-${state.currentSide}.${type === 'png' ? 'png' : 'jpg'}`), `image/${type === 'png' ? 'png' : 'jpeg'}`, 0.95);
+  const { node } = await createExportSnapshot(getCurrentCard(), state.currentSide);
+  try {
+    const canvas = await html2canvas(node, buildCaptureOptions(type === 'jpeg' ? '#ffffff' : null));
+    canvas.toBlob(
+      blob => downloadBlob(blob, `${safeName(state.name)}-${getCurrentCard().name}-${state.currentSide}.${type === 'png' ? 'png' : 'jpg'}`),
+      `image/${type === 'png' ? 'png' : 'jpeg'}`,
+      0.95
+    );
+  } finally {
+    node.remove();
+  }
 }
 
 async function exportPDF() {
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [getCurrentCard().width, getCurrentCard().height] });
+  const originalCardId = state.currentCardId;
+  const originalSide = state.currentSide;
+  selectedElementId = null;
+  renderAll();
+  const pages = [];
   for (let c = 0; c < state.cards.length; c++) {
-    state.currentCardId = state.cards[c].id;
+    const card = state.cards[c];
     for (const side of ['front', 'back']) {
-      state.currentSide = side;
-      selectedElementId = null;
-      renderAll();
-      const canvas = await html2canvas(els.cardCanvas, { backgroundColor: null, useCORS: true, scale: 2 });
-      const img = canvas.toDataURL('image/png');
-      if (!(c === 0 && side === 'front')) pdf.addPage([getCurrentCard().width, getCurrentCard().height], 'portrait');
-      pdf.addImage(img, 'PNG', 0, 0, getCurrentCard().width, getCurrentCard().height);
+      const { node } = await createExportSnapshot(card, side);
+      try {
+        const canvas = await html2canvas(node, buildCaptureOptions('#ffffff'));
+        pages.push({
+          width: card.width,
+          height: card.height,
+          img: canvas.toDataURL('image/png')
+        });
+      } finally {
+        node.remove();
+      }
     }
   }
+  if (!pages.length) return;
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: pages[0].width >= pages[0].height ? 'landscape' : 'portrait', unit: 'px', format: [pages[0].width, pages[0].height] });
+  pages.forEach((page, index) => {
+    if (index > 0) {
+      pdf.addPage([page.width, page.height], page.width >= page.height ? 'landscape' : 'portrait');
+    }
+    pdf.addImage(page.img, 'PNG', 0, 0, page.width, page.height, undefined, 'FAST');
+  });
   pdf.save(`${safeName(state.name)}.pdf`);
-  state.currentCardId = state.cards[0].id;
-  state.currentSide = 'front';
+  state.currentCardId = originalCardId;
+  state.currentSide = originalSide;
   renderAll();
+}
+
+async function createExportSnapshot(card, sideName) {
+  await waitForFontsAndImages();
+  const liveCanvas = els.cardCanvas;
+  const originalCardId = state.currentCardId;
+  const originalSide = state.currentSide;
+  state.currentCardId = card.id;
+  state.currentSide = sideName;
+  renderCanvas();
+  const clone = liveCanvas.cloneNode(true);
+  clone.classList.remove('flip-anim');
+  clone.classList.add('export-snapshot');
+  clone.querySelectorAll('.resize-handle').forEach(node => node.remove());
+  clone.querySelectorAll('.canvas-element').forEach(node => {
+    node.classList.remove('selected', 'locked');
+  });
+  const holder = document.createElement('div');
+  holder.className = 'export-host';
+  holder.appendChild(clone);
+  document.body.appendChild(holder);
+  await waitForImagesInNode(clone);
+  await waitTwoFrames();
+  state.currentCardId = originalCardId;
+  state.currentSide = originalSide;
+  renderCanvas();
+  return { node: holder, canvas: clone };
+}
+
+function buildCaptureOptions(backgroundColor = null) {
+  return {
+    backgroundColor,
+    useCORS: true,
+    scale: Math.max(2, window.devicePixelRatio || 1),
+    logging: false,
+    imageTimeout: 15000,
+    removeContainer: true,
+    width: undefined,
+    height: undefined,
+    onclone: clonedDoc => {
+      clonedDoc.body.classList.add('is-exporting');
+    }
+  };
 }
 
 function importJSON(e) {
@@ -675,6 +805,7 @@ function importJSON(e) {
     try {
       const data = JSON.parse(text);
       if (!data.cards || !Array.isArray(data.cards)) throw new Error('Format invalide');
+      if (typeof data.persistLocal !== 'boolean') data.persistLocal = true;
       loadDeck(data);
     } catch {
       alert('JSON invalide.');
@@ -746,6 +877,7 @@ function rgbaFromHex(hex, opacity = 1) {
   return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 function downloadBlob(blob, filename) {
+  if (!blob) return;
   const a = document.createElement('a');
   const url = URL.createObjectURL(blob);
   a.href = url; a.download = filename; a.click();
@@ -753,4 +885,122 @@ function downloadBlob(blob, filename) {
 }
 function escapeHtml(str) {
   return (str || '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+}
+
+async function waitForFontsAndImages() {
+  if (document.fonts?.ready) {
+    try { await document.fonts.ready; } catch {}
+  }
+  await waitForImagesInNode(document);
+  await waitTwoFrames();
+}
+
+function waitForImagesInNode(root) {
+  const images = [...root.querySelectorAll ? root.querySelectorAll('img') : []];
+  const backgroundNodes = [...(root.querySelectorAll ? root.querySelectorAll('*') : [])].filter(node => {
+    const bg = getComputedStyle(node).backgroundImage;
+    return bg && bg !== 'none';
+  });
+  const promises = images.map(img => {
+    if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+    return new Promise(resolve => {
+      img.addEventListener('load', resolve, { once: true });
+      img.addEventListener('error', resolve, { once: true });
+      setTimeout(resolve, 4000);
+    });
+  });
+  backgroundNodes.forEach(node => {
+    const bg = getComputedStyle(node).backgroundImage;
+    const match = /url\(["']?(.*?)["']?\)/.exec(bg);
+    if (!match?.[1]) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = match[1];
+    promises.push(new Promise(resolve => {
+      if (img.complete) return resolve();
+      img.onload = img.onerror = () => resolve();
+      setTimeout(resolve, 4000);
+    }));
+  });
+  return Promise.all(promises);
+}
+
+function waitTwoFrames() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+function openDB() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_DECKS)) {
+        db.createObjectStore(STORE_DECKS, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return dbPromise;
+}
+
+async function dbGetAllDecks() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_DECKS, 'readonly');
+    const store = tx.objectStore(STORE_DECKS);
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function getDeckById(id) {
+  if (!id) return null;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_DECKS, 'readonly');
+    const store = tx.objectStore(STORE_DECKS);
+    const request = store.get(id);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function dbPutDeck(deck) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_DECKS, 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('db write failed'));
+    tx.objectStore(STORE_DECKS).put(deck);
+  });
+}
+
+async function dbDeleteDeck(id) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_DECKS, 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('db delete failed'));
+    tx.objectStore(STORE_DECKS).delete(id);
+  });
+}
+
+async function migrateLegacyStorage() {
+  if (localStorage.getItem(META_MIGRATED_KEY) === '1') return;
+  let legacyDecks = [];
+  try {
+    legacyDecks = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  } catch {
+    legacyDecks = [];
+  }
+  if (Array.isArray(legacyDecks) && legacyDecks.length) {
+    for (const deck of legacyDecks) {
+      if (typeof deck.persistLocal !== 'boolean') deck.persistLocal = true;
+      await dbPutDeck(deck);
+    }
+  }
+  localStorage.setItem(META_MIGRATED_KEY, '1');
 }
