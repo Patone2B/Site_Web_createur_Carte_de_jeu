@@ -16,7 +16,7 @@
         <div class="hero-text">
           <span class="eyebrow">Deck Studio Local</span>
           <h1>Crée, édite et exporte tes cartes en local</h1>
-          <p>Images locales, texte, formes, recto/verso, export JSON, PNG, JPEG et PDF. Sauvegarde automatique en local storage.</p>
+          <p>Images locales, texte, formes, recto/verso, export JSON, PNG, JPEG et PDF. Sauvegarde navigateur améliorée avec option de désactivation par deck.</p>
           <div class="hero-actions">
             <button id="createDeckBtn" class="btn primary">Nouveau deck</button>
             <label class="btn secondary file-btn">
@@ -50,6 +50,7 @@
           <span id="saveStatus" class="save-status">Sauvegardé</span>
         </div>
         <div class="topbar-actions">
+          <label class="check-row save-toggle-row"><input type="checkbox" id="persistDeckToggle" checked> Sauvegarde navigateur</label>
           <button id="undoBtn" class="btn tiny ghost">Annuler</button>
           <button id="redoBtn" class="btn tiny ghost">Rétablir</button>
           <button id="saveDeckBtn" class="btn tiny secondary">Sauvegarder</button>
@@ -192,6 +193,14 @@
 
           <div class="panel">
             <div class="panel-header">
+              <h3>Sauvegarde</h3>
+            </div>
+            <label class="check-row full-width"><input type="checkbox" id="persistDeckToggleMirror" checked> Conserver ce deck dans le navigateur</label>
+            <p class="muted compact">Quand cette option est désactivée, le deck reste éditable et exportable en JSON/PDF/PNG/JPEG, mais il n'est plus gardé dans la liste locale.</p>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
               <h3>Calques</h3>
             </div>
             <div id="layersList" class="layers-list"></div>
@@ -208,7 +217,8 @@
         </div>
         <p>Deck Studio Local est un éditeur front-end simple pour créer des cartes personnalisées en local.</p>
         <ul>
-          <li>Sauvegarde automatique dans le navigateur</li>
+          <li>Sauvegarde navigateur améliorée avec IndexedDB</li>
+          <li>Option par deck pour désactiver la conservation locale</li>
           <li>Import/export JSON pour partager ou archiver</li>
           <li>Export image et PDF via bibliothèques gratuites</li>
           <li>Recto/verso par carte</li>
